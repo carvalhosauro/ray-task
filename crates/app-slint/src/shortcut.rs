@@ -1,7 +1,6 @@
 //! Atalho no menu do sistema na primeira execução: os instaladores de uma linha
 //! (`curl | sh`, `irm | iex`) só copiam o binário, e o app ficava invisível no menu.
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -59,6 +58,7 @@ fn is_cargo_build(exe: &Path) -> bool {
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
+    use std::fs;
 
     const TEMPLATE: &str = include_str!("../../../packaging/ray-task.desktop");
     const ICONS: [(u32, &[u8]); 7] = [
@@ -115,6 +115,7 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use super::*;
+    use std::fs;
 
     pub fn ensure(s: &Shortcut) -> io::Result<Outcome> {
         let lnk = s.data_dir.join(r"Microsoft\Windows\Start Menu\Programs\ray-task.lnk");
