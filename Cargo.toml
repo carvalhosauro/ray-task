@@ -6,6 +6,7 @@ members = ["crates/core", "crates/app-slint"]
 edition = "2021"
 version = "0.1.0"
 rust-version = "1.89"
+license = "MIT"
 
 [workspace.dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }

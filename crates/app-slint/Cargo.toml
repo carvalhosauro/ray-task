@@ -3,6 +3,7 @@ name = "ray-task"
 edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 ray-core = { path = "../core" }
