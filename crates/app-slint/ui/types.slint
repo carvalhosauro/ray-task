@@ -1,0 +1,33 @@
+export struct TagChip { id: int, name: string }
+
+// kind: 0 = Hoje, 1 = Próximos, 2 = Entrada, 3 = projeto
+export struct NavItem { kind: int, project-id: int, label: string, color: color, count: int, alert: bool }
+
+// tom: 0 = normal, 1 = em breve (laranja), 2 = atrasada (vermelho)
+export struct TaskItem {
+    id: int,
+    title: string,
+    notes: string,
+    done: bool,
+    leaving: bool,
+    pulse: bool,
+    fresh: bool,
+    group-header: string,
+    group-sub: string,
+    meta: string,
+    tone: int,
+    project-name: string,
+    project-color: color,
+    show-project: bool,
+    has-project: bool,
+    date-label: string,
+    date-tone: int,
+    time-label: string,
+    time-tone: int,
+    tags: [TagChip],
+}
+
+export struct CalCell { day: int, iso: string, today: bool, selected: bool, past: bool }
+
+// id -1 = Entrada
+export struct ProjectChoice { id: int, label: string, color: color }

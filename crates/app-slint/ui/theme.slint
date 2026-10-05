@@ -1,0 +1,26 @@
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    out property <color> bg: dark ? #1C1C1E : #FFFFFF;
+    out property <color> side: dark ? #242426 : #F5F5F7;
+    out property <color> text: dark ? #F5F5F7 : #1D1D1F;
+    out property <color> sub: dark ? #A1A1A6 : #6E6E73;
+    out property <color> faint: dark ? #636366 : #AEAEB2;
+    out property <color> line: dark ? #3A3A3C : #E5E5EA;
+    out property <color> field: dark ? #2E2E31 : #E8E8ED;
+    out property <color> chip: dark ? #2E2E31 : #F0F0F3;
+    out property <color> card: dark ? #2A2A2D : #FFFFFF;
+    out property <color> ring: dark ? #5A5A5E : #C7C7CC;
+    out property <color> selection: dark ? #3A3A3D : #DCDCE1;
+    out property <color> accent: dark ? #0A84FF : #007AFF;
+    out property <color> red: dark ? #FF6961 : #D70015;
+    out property <color> orange: dark ? #FFB340 : #C25E00;
+    out property <color> pop: dark ? #2C2C2E : #FFFFFF;
+    out property <color> toast: dark ? #3A3A3C : #1D1D1FF0;
+    out property <color> shadow: dark ? #00000059 : #00000014;
+    // ícones das visões (iguais nos dois temas)
+    out property <color> today-icon: #FF9F0A;
+    out property <color> upcoming-icon: #FF453A;
+    out property <color> inbox-icon: #0A84FF;
+}

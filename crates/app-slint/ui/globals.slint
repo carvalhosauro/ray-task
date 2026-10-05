@@ -1,0 +1,60 @@
+import { ProjectChoice, CalCell } from "types.slint";
+
+export global Actions {
+    // navegação
+    callback select-nav(int);
+    // tarefas
+    callback toggle(int);
+    callback expand(int);
+    callback new-task();
+    callback commit-new(string);
+    callback edit(int, string, string);
+    callback delete(int);
+    callback undo();
+    callback toast-action();
+    // tags e mover
+    callback add-tag(int, string);
+    callback remove-tag(int, int);
+    callback remove-last-tag(int);
+    pure callback tag-suggest(int, string) -> string;
+    callback request-move(int, int);
+    in property <[ProjectChoice]> move-targets;
+    in-out property <int> focus-tag-request: 0;
+    in-out property <int> focus-tag-task: -1;
+    // teclado e filtro
+    callback escape();
+    callback move-selection(int);
+    callback expand-selected();
+    callback toggle-selected();
+    callback delete-selected();
+    callback date-selected();
+    callback tag-selected();
+    callback toggle-filter();
+    callback filter-changed(string);
+    callback toggle-show-done();
+    // projetos, tags e diálogos
+    callback new-project();
+    callback begin-rename-project(int);
+    callback set-project-color(int, int);
+    callback request-delete-project(int);
+    callback begin-rename-tag(int);
+    callback request-delete-tag(int);
+    callback prompt-accept(string);
+    callback confirm-accept();
+    callback dialog-cancel();
+}
+
+export global Picker {
+    in property <string> month-title;
+    in property <[CalCell]> cells;
+    in property <string> time-text;
+    in property <string> next-week-hint;
+    in-out property <int> open-for: -1;
+    in-out property <int> request: 0;
+    in-out property <int> close-request: 0;
+    callback open(int);
+    callback shift-month(int);
+    callback pick(int, string);
+    callback quick(int, int);
+    callback set-time(int, string);
+}

@@ -1,0 +1,39 @@
+import "../assets/fonts/Inter-Regular.ttf";
+import "../assets/fonts/Inter-Medium.ttf";
+import "../assets/fonts/Inter-SemiBold.ttf";
+import "../assets/fonts/Inter-Bold.ttf";
+import { Theme } from "theme.slint";
+export { Actions, Picker } from "globals.slint";
+export { TagChip, NavItem, TaskItem, CalCell, ProjectChoice } from "types.slint";
+
+export component AppWindow inherits Window {
+    title: "ray-task";
+    preferred-width: 960px;
+    preferred-height: 640px;
+    min-width: 640px;
+    min-height: 420px;
+    default-font-family: "Inter";
+    background: Theme.bg;
+    in property <string> fatal-error;
+    in property <string> status;
+
+    VerticalLayout {
+        alignment: center;
+        padding: 48px;
+        spacing: 12px;
+        Text {
+            text: root.fatal-error != "" ? "Não foi possível iniciar" : "ray-task";
+            font-size: 20px;
+            font-weight: 700;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.fatal-error != "" ? root.fatal-error : root.status;
+            font-size: 14px;
+            color: Theme.sub;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+    }
+}
