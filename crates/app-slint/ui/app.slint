@@ -58,6 +58,44 @@ component NewTaskButton inherits Rectangle {
     }
 }
 
+/// Fim da lista: nova tarefa, "Mostrar concluídas" e texto de lista vazia.
+component ListFooter inherits VerticalLayout {
+    in property <bool> adding;
+    in property <string> done-toggle-label;
+    in property <string> empty-text;
+    padding-bottom: 20px;
+    if root.adding : NewTaskRow { }
+    if !root.adding : NewTaskButton { }
+    if root.done-toggle-label != "" : HorizontalLayout {
+        padding-left: 12px;
+        padding-top: 12px;
+        Text {
+            text: root.done-toggle-label;
+            font-size: 13px;
+            color: Theme.sub;
+            TouchArea { clicked => { Actions.toggle-show-done(); } }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    if root.empty-text != "" : Text {
+        text: root.empty-text;
+        font-size: 14px;
+        color: Theme.sub;
+        horizontal-alignment: center;
+        height: 120px;
+        vertical-alignment: center;
+    }
+}
+
+/// Flickable virtualizado, sem barra de rolagem (igual ao Flickable de antes).
+/// O compilador do Slint trata um `for` filho direto de um elemento chamado `ListView`
+/// que tenha content-y/-height/-width e visible-height/-width como lista virtual:
+/// só instancia as linhas que cabem na área visível.
+component ListView inherits Flickable {
+    out property <length> visible-width: self.width;
+    out property <length> visible-height: self.height;
+}
+
 component FilterField inherits Rectangle {
     width: 200px;
     height: 30px;
@@ -194,39 +232,37 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
-                        Flickable {
+                        // Lista vazia: o rodapé fica fora da lista virtual (não há última linha para carregá-lo).
+                        if root.tasks.length == 0 : ListFooter {
+                            vertical-stretch: 0;
+                            padding-left: 20px;
+                            padding-right: 20px;
+                            adding: root.adding;
+                            done-toggle-label: root.done-toggle-label;
+                            empty-text: root.empty-text;
+                        }
+                        task-list := ListView {
                             vertical-stretch: 1;
-                            content-height: list.preferred-height;
-                            list := VerticalLayout {
+                            // Nova tarefa entra no fim: rola até lá para o campo existir e receber o foco.
+                            property <bool> adding: root.adding;
+                            changed adding => {
+                                if (self.adding && self.content-height > self.visible-height) {
+                                    self.content-y = -self.content-height;
+                                }
+                            }
+                            // Só as linhas visíveis existem; o rodapé vai junto da última linha.
+                            for item[i] in root.tasks : VerticalLayout {
                                 padding-left: 20px;
                                 padding-right: 20px;
-                                padding-bottom: 20px;
-                                alignment: start;
-                                for item in root.tasks : TaskRow {
+                                TaskRow {
                                     item: item;
                                     expanded: item.id == root.expanded-id;
                                     selected: item.id == root.selected-id;
                                 }
-                                if root.adding : NewTaskRow { }
-                                if !root.adding : NewTaskButton { }
-                                if root.done-toggle-label != "" : HorizontalLayout {
-                                    padding-left: 12px;
-                                    padding-top: 12px;
-                                    Text {
-                                        text: root.done-toggle-label;
-                                        font-size: 13px;
-                                        color: Theme.sub;
-                                        TouchArea { clicked => { Actions.toggle-show-done(); } }
-                                    }
-                                    Rectangle { horizontal-stretch: 1; }
-                                }
-                                if root.empty-text != "" : Text {
-                                    text: root.empty-text;
-                                    font-size: 14px;
-                                    color: Theme.sub;
-                                    horizontal-alignment: center;
-                                    height: 120px;
-                                    vertical-alignment: center;
+                                if i == root.tasks.length - 1 : ListFooter {
+                                    adding: root.adding;
+                                    done-toggle-label: root.done-toggle-label;
+                                    empty-text: root.empty-text;
                                 }
                             }
                         }
