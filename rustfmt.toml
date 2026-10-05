@@ -1,0 +1,3 @@
+# Matches the existing code style: long lines, compact small expressions.
+max_width = 140
+use_small_heuristics = "Max"

@@ -5,10 +5,14 @@ use crate::model::Due;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DueStatus {
     NoDate,
-    Overdue { days: i64 },
+    Overdue {
+        days: i64,
+    },
     Today,
     /// Negativo = a hora já passou.
-    TodayAt { minutes_until: i64 },
+    TodayAt {
+        minutes_until: i64,
+    },
     Future,
 }
 

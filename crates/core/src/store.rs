@@ -165,7 +165,18 @@ impl Store {
         let sort_order = self.next_sort;
         self.next_sort += 1;
         let now = self.clock.now_utc();
-        let task = Task { id, project_id, title, notes: String::new(), due, completed_at: None, sort_order, created_at: now, updated_at: now, tags: Vec::new() };
+        let task = Task {
+            id,
+            project_id,
+            title,
+            notes: String::new(),
+            due,
+            completed_at: None,
+            sort_order,
+            created_at: now,
+            updated_at: now,
+            tags: Vec::new(),
+        };
         self.ops.push(WriteOp::UpsertTask(task.clone()));
         self.tasks.insert(id, task);
         Ok(id)
