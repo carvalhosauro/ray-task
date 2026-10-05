@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Days, NaiveDate, NaiveDateTime, Utc};
 
@@ -327,4 +327,88 @@ impl Store {
             self.undo.remove(0);
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub today: usize,
+    pub upcoming: usize,
+    pub inbox: usize,
+    /// Há alguma tarefa aberta atrasada (data passada ou hora de hoje já passou).
+    pub overdue: bool,
+    pub per_project: HashMap<ProjectId, usize>,
+}
+
+impl Store {
+    /// Tarefas da visão, já ordenadas. Concluídas só aparecem se estiverem em `keep`
+    /// (a UI usa isso para manter a linha visível durante a animação de saída).
+    pub fn view(&self, view: View, keep: &HashSet<TaskId>) -> Vec<&Task> {
+        let today = self.today();
+        let mut out: Vec<&Task> = self
+            .tasks
+            .values()
+            .filter(|t| !t.is_done() || keep.contains(&t.id))
+            .filter(|t| match view {
+                View::Today => t.due.is_some_and(|d| d.date <= today),
+                View::Upcoming => t.due.is_some_and(|d| d.date > today),
+                View::Inbox => t.project_id.is_none(),
+                View::Project(id) => t.project_id == Some(id),
+            })
+            .collect();
+        match view {
+            View::Today | View::Upcoming => out.sort_by(|a, b| {
+                let (da, db) = (a.due.expect("filtrado por data"), b.due.expect("filtrado por data"));
+                (da.date >= today)
+                    .cmp(&(db.date >= today)) // atrasadas primeiro
+                    .then(da.date.cmp(&db.date))
+                    .then(da.time.is_none().cmp(&db.time.is_none())) // com hora antes de sem hora
+                    .then(da.time.cmp(&db.time))
+                    .then(a.sort_order.cmp(&b.sort_order))
+                    .then(a.id.cmp(&b.id))
+            }),
+            View::Inbox | View::Project(_) => out.sort_by_key(|t| (t.sort_order, t.id)),
+        }
+        out
+    }
+
+    pub fn completed_in_project(&self, project_id: ProjectId) -> Vec<&Task> {
+        let mut done: Vec<&Task> = self.tasks.values().filter(|t| t.project_id == Some(project_id) && t.is_done()).collect();
+        done.sort_by(|a, b| b.completed_at.cmp(&a.completed_at).then(b.id.cmp(&a.id)));
+        done
+    }
+
+    pub fn is_late(&self, task: &Task) -> bool {
+        let now = self.now();
+        !task.is_done()
+            && task.due.is_some_and(|d| d.date < now.date() || (d.date == now.date() && d.time.is_some_and(|t| t <= now.time())))
+    }
+
+    pub fn counts(&self) -> Counts {
+        let today = self.today();
+        let mut counts = Counts::default();
+        for p in &self.projects {
+            counts.per_project.insert(p.id, 0);
+        }
+        for task in self.tasks.values().filter(|t| !t.is_done()) {
+            match task.due {
+                Some(d) if d.date <= today => counts.today += 1,
+                Some(_) => counts.upcoming += 1,
+                None => {}
+            }
+            match task.project_id {
+                None => counts.inbox += 1,
+                Some(p) => *counts.per_project.entry(p).or_insert(0) += 1,
+            }
+            if self.is_late(task) {
+                counts.overdue = true;
+            }
+        }
+        counts
+    }
+}
+
+/// Filtro de texto (`Ctrl+F`): título ou notas, sem diferenciar maiúsculas. Vazio casa com tudo.
+pub fn matches_query(task: &Task, query: &str) -> bool {
+    let q = query.trim().to_lowercase();
+    q.is_empty() || task.title.to_lowercase().contains(&q) || task.notes.to_lowercase().contains(&q)
 }
