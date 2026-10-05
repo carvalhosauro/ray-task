@@ -17,6 +17,9 @@ install-path = "CARGO_HOME"
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
+# release.yml: dependabot bumps action versions. main.wxs: hand-added Start menu
+# shortcut and icon. Re-run `dist generate` by hand after changing dist config.
+allow-dirty = ["ci", "msi"]
 # Check the release plan on PRs without building
 pr-run-mode = "plan"
 # Linux menu entry helper and icons shipped next to the binary
