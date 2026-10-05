@@ -42,13 +42,19 @@ pub struct WriterHandle {
 
 impl WriterHandle {
     pub fn send(&self, ops: Vec<WriteOp>) {
-        if !ops.is_empty() {
-            let _ = self.tx.send(Msg::Ops(ops));
+        if ops.is_empty() {
+            return;
+        }
+        let lost = ops.len();
+        if self.tx.send(Msg::Ops(ops)).is_err() {
+            tracing::error!(lost, "thread de escrita encerrada; operações descartadas");
         }
     }
 
     pub fn retry(&self) {
-        let _ = self.tx.send(Msg::Retry);
+        if self.tx.send(Msg::Retry).is_err() {
+            tracing::error!("thread de escrita encerrada; retry ignorado");
+        }
     }
 }
 
@@ -100,6 +106,9 @@ fn run<S: Sink>(mut sink: S, rx: Receiver<Msg>, on_event: impl Fn(WriterEvent)) 
             let _ = ack.send(queue.len());
             return;
         }
+    }
+    if !queue.is_empty() {
+        tracing::warn!(pending = queue.len(), "thread de escrita encerrou sem shutdown com operações pendentes");
     }
 }
 
