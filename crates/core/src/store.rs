@@ -306,6 +306,47 @@ impl Store {
         Ok(())
     }
 
+    // ---------- desfazer ----------
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    /// Desfaz a ação mais recente que ainda faz sentido. Entradas que não podem mais
+    /// ser aplicadas (tarefa ou projeto sumiram) são descartadas.
+    pub fn undo(&mut self) -> bool {
+        while let Some(entry) = self.undo.pop() {
+            match entry {
+                UndoEntry::Deleted(task) => {
+                    if task.project_id.is_some_and(|p| self.project(p).is_none()) {
+                        continue;
+                    }
+                    let id = task.id;
+                    self.tasks.insert(id, task);
+                    self.save_task(id);
+                    return true;
+                }
+                UndoEntry::Completed { id, previous } => {
+                    let Some(task) = self.tasks.get_mut(&id) else { continue };
+                    task.completed_at = previous;
+                    self.save_task(id);
+                    return true;
+                }
+                UndoEntry::Moved { id, project_id, tags } => {
+                    if project_id.is_some_and(|p| self.project(p).is_none()) {
+                        continue;
+                    }
+                    let Some(task) = self.tasks.get_mut(&id) else { continue };
+                    task.project_id = project_id;
+                    task.tags = tags;
+                    self.save_task(id);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     // ---------- internos ----------
 
     pub(crate) fn task_mut(&mut self, id: TaskId) -> Result<&mut Task, DomainError> {
