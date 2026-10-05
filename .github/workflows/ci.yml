@@ -62,3 +62,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: scripts/check-commit-msg.test.sh
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/linux-deps
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      # Floor ratchets up only; see CONTRIBUTING.md "Coverage".
+      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info --fail-under-lines 92
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
