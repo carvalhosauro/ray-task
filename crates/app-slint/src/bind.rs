@@ -280,6 +280,8 @@ pub(crate) fn switch_view(s: &Rc<Shared>, view: View, nav_index: usize) {
     let s1 = s.clone();
     Timer::single_shot(Duration::from_millis(60), move || {
         update(&s1, |c| c.select_view(view));
+        // Pedido de data pendente da visão anterior não pode abrir o popover mais tarde.
+        close_picker(&s1);
         if let Some(ui) = s1.ui.upgrade() {
             ui.set_content_faded(false);
             ui.invoke_focus_root();
@@ -317,6 +319,12 @@ fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
                 log_err(c.commit_new(&title), "criar tarefa");
             });
             s.ctrl.borrow_mut().fresh = None; // só a primeira renderização cresce
+            // Captura seguida: o campo "Nova tarefa" vai na última linha, que desce a cada Enter.
+            // A lista é virtual, então rola até ela para o campo continuar existindo (e com foco).
+            let adding = s.ctrl.borrow().adding;
+            if let (true, Some(ui), Some(last)) = (adding, s.ui.upgrade(), s.tasks.row_count().checked_sub(1)) {
+                reveal_index(&ui, last);
+            }
         });
     }
     {
@@ -537,6 +545,10 @@ fn reveal(s: &Shared, id: TaskId) {
     let Some(index) = (0..s.tasks.row_count()).find(|&i| s.tasks.row_data(i).is_some_and(|r| r.id as TaskId == id)) else {
         return;
     };
+    reveal_index(&ui, index);
+}
+
+fn reveal_index(ui: &AppWindow, index: usize) {
     ui.set_reveal_index(index as i32);
     ui.set_reveal_request(ui.get_reveal_request() + 1);
 }

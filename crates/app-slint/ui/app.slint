@@ -133,6 +133,8 @@ component ListView {
         }
     }
     flick := Flickable {
+        // Rolagem do usuário (roda/arrasto) vence a correção automática em andamento.
+        flicked => { root.fine-ticks = 0; }
         @children
     }
 }

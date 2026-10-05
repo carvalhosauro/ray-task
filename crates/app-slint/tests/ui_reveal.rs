@@ -42,3 +42,32 @@ fn keyboard_reveals_target_row() {
     actions.invoke_tag_selected();
     assert_eq!(ui.get_reveal_index(), 29);
 }
+
+/// Captura seguida (Ctrl+N, Enter, Enter…) numa lista longa: cada nova tarefa empurra o campo
+/// "Nova tarefa" uma linha para baixo; a lista precisa acompanhar o fim, senão o campo some.
+#[test]
+fn quick_add_keeps_end_in_view() {
+    i_slint_backend_testing::init_no_event_loop();
+    let mut store = Store::new(Snapshot::default(), Box::new(FixedClock::at("2026-10-05 13:35")));
+    for i in 0..60 {
+        store.create_task(View::Inbox, &format!("Tarefa {i}")).unwrap();
+    }
+    store.take_ops();
+    let ui = AppWindow::new().unwrap();
+    let _binding = bind::bind(&ui, Controller::new(store, Box::new(|_| {})), Box::new(|| {}));
+    let actions = ui.global::<Actions>();
+    actions.invoke_select_nav(2);
+    i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(100));
+    assert_eq!(ui.get_view_title(), "Entrada");
+
+    actions.invoke_new_task();
+    for n in 1..=5 {
+        let before = ui.get_reveal_request();
+        actions.invoke_commit_new(format!("Nova {n}").into());
+        assert!(ui.get_adding(), "continua capturando");
+        let last = ui.get_tasks().row_count() as i32 - 1;
+        assert_eq!(last, 59 + n);
+        assert_eq!(ui.get_reveal_index(), last, "a última linha (com o campo) fica visível");
+        assert_eq!(ui.get_reveal_request(), before + 1);
+    }
+}

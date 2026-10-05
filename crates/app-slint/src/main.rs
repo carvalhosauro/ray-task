@@ -9,12 +9,16 @@ use slint::ComponentHandle;
 
 fn main() -> Result<(), slint::PlatformError> {
     let started = Instant::now();
-    // RAM budget, spec §1: renderer de software por padrão; SLINT_BACKEND do usuário vence.
-    if let Some(name) = backend::default_backend(std::env::var_os("SLINT_BACKEND").as_deref()) {
-        slint::BackendSelector::new().backend_name(name.into()).select()?;
-    }
     let paths = Paths::from_env();
     let _log = logging::init(&paths.log_dir);
+    // RAM budget, spec §1: renderer de software por padrão; SLINT_BACKEND do usuário vence.
+    // Antes de qualquer chamada ao Slint; depois do log, para registrar uma falha.
+    if let Some(name) = backend::default_backend(std::env::var_os("SLINT_BACKEND").as_deref()) {
+        if let Err(e) = slint::BackendSelector::new().backend_name(name.into()).select() {
+            tracing::error!(%e, backend = name, "selecionar renderer");
+            return Err(e);
+        }
+    }
     let ui = AppWindow::new()?;
 
     let _lock = match paths::acquire_lock(&paths.lock) {
