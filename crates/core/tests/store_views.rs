@@ -81,7 +81,7 @@ fn counts_flag_overdue_including_past_time_today() {
     assert_eq!(counts.inbox, 2);
     s.toggle_complete(past).unwrap();
     assert!(!s.counts().overdue);
-    assert!(s.is_late(s.task(later).unwrap()) == false);
+    assert!(!s.is_late(s.task(later).unwrap()));
 }
 
 #[test]
