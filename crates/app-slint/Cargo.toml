@@ -18,8 +18,14 @@ tracing-subscriber = "0.3.23"
 tracing-appender = "0.2.5"
 dirs = "7"
 
+[target.'cfg(windows)'.dependencies]
+mslnk = "0.1"
+
 [build-dependencies]
 slint-build = "1.18"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [dev-dependencies]
 tempfile.workspace = true

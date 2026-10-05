@@ -7,6 +7,7 @@ use ray_core::writer::{SqliteSink, Writer};
 use ray_core::{db, Store, SystemClock};
 use ray_task::controller::Controller;
 use ray_task::paths::{self, LockError, Paths};
+use ray_task::shortcut::Shortcut;
 use ray_task::{backend, bind, logging, AppWindow};
 use slint::ComponentHandle;
 
@@ -29,6 +30,12 @@ fn main() -> Result<(), slint::PlatformError> {
         Err(LockError::AlreadyRunning) => return fatal(&ui, "O ray-task já está aberto em outra janela.".into()),
         Err(LockError::Io(e)) => return fatal(&ui, format!("Não foi possível criar o lock em {}:\n{e}", paths.lock.display())),
     };
+    if let Some(shortcut) = Shortcut::from_env() {
+        match shortcut.ensure() {
+            Ok(outcome) => tracing::debug!(?outcome, "atalho no menu"),
+            Err(e) => tracing::warn!(%e, "criar atalho no menu"),
+        }
+    }
 
     let opened = db::open(&paths.db).and_then(|conn| db::load(&conn).map(|snapshot| (conn, snapshot)));
     let (conn, snapshot) = match opened {
