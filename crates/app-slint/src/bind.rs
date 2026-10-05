@@ -1,4 +1,5 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -129,25 +130,37 @@ fn task_item(r: Row) -> TaskItem {
 }
 
 /// Atualiza o modelo no lugar: linhas da mesma tarefa são reaproveitadas para as animações rodarem.
+///
+/// O(n): um mapa id → posição antiga, montado uma vez. Durante a passada o modelo é sempre
+/// `novas[..i]` seguido de `antigas[cursor..]`, então a posição antiga diz quantas linhas descartar.
+/// Quando pouco se aproveita (troca de visão, filtro que corta muitas linhas) o modelo é trocado
+/// de uma vez: inserir/remover linha a linha custa O(n) cada e não há animação a preservar.
 fn sync_rows(model: &VecModel<TaskItem>, rows: Vec<TaskItem>) {
-    let mut i = 0;
-    for row in rows {
-        let found = (i..model.row_count()).find(|&j| model.row_data(j).is_some_and(|r| r.id == row.id));
-        match found {
+    /// Acima disso, inserções + remoções viram uma troca do modelo inteiro.
+    const MAX_IN_PLACE_CHANGES: usize = 64;
+    let old: HashMap<i32, usize> = (0..model.row_count()).filter_map(|j| model.row_data(j).map(|r| (r.id, j))).collect();
+    let reused = rows.iter().filter(|r| old.contains_key(&r.id)).count();
+    let changes = (rows.len() - reused) + (old.len() - reused);
+    if reused * 2 < rows.len().max(old.len()) || changes > MAX_IN_PLACE_CHANGES {
+        model.set_vec(rows);
+        return;
+    }
+    let len = rows.len();
+    let mut cursor = 0;
+    for (i, row) in rows.into_iter().enumerate() {
+        match old.get(&row.id).copied().filter(|&j| j >= cursor) {
             Some(j) => {
-                for _ in i..j {
+                for _ in cursor..j {
                     model.remove(i);
                 }
-                if model.row_data(i).as_ref() != Some(&row) {
-                    model.set_row_data(i, row);
-                }
+                cursor = j + 1;
+                model.set_row_data(i, row);
             }
             None => model.insert(i, row),
         }
-        i += 1;
     }
-    while model.row_count() > i {
-        model.remove(i);
+    while model.row_count() > len {
+        model.remove(model.row_count() - 1);
     }
 }
 
