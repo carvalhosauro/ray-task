@@ -1,8 +1,8 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use ray_core::writer::WriterEvent;
 use ray_core::{DomainError, TaskId, View};
 use slint::{Color, ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
@@ -42,6 +42,13 @@ impl Binding {
     pub fn controller(&self) -> Ref<'_, Controller> {
         self.shared.ctrl.borrow()
     }
+
+    /// Define a hora de uma tarefa sem passar pela UI (usado em testes).
+    pub fn set_time_for_test(&self, id: TaskId, text: &str) {
+        update(&self.shared, |c| {
+            let _ = c.set_time(id, text);
+        });
+    }
 }
 
 pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
@@ -58,7 +65,8 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
     wire_tasks(ui, &shared);
     wire_projects(ui, &shared);
     wire_details(ui, &shared);
-    let timers = Vec::new();
+    wire_keyboard(ui, &shared);
+    let timers = vec![start_clock(&shared)];
     refresh(&shared);
     Binding { shared, _timers: timers }
 }
@@ -351,8 +359,6 @@ fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
     }
 }
 
-#[allow(dead_code)] // used in Task 14 (Esc)
-#[allow(dead_code)] // used in Task 14 (Esc)
 pub(crate) fn dialog_open(s: &Shared) -> bool {
     s.pending.borrow().is_some()
 }
@@ -524,7 +530,6 @@ fn close_picker(s: &Shared) {
     }
 }
 
-#[allow(dead_code)] // used in Task 14 (Ctrl+T)
 pub(crate) fn focus_tag_input(s: &Shared, id: TaskId) {
     if let Some(ui) = s.ui.upgrade() {
         let actions = ui.global::<Actions>();
@@ -619,5 +624,118 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_request_move(move |id, to| request_move(&s, id as TaskId, (to >= 0).then_some(to as i64)));
+    }
+}
+
+fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
+    let actions = ui.global::<Actions>();
+    {
+        let s = s.clone();
+        actions.on_escape(move || {
+            if dialog_open(&s) {
+                close_dialogs(&s);
+                return;
+            }
+            let popover_was_open = s.ctrl.borrow().popover_task.is_some();
+            update(&s, |c| c.escape());
+            if popover_was_open {
+                close_picker(&s);
+            }
+            if let Some(ui) = s.ui.upgrade() {
+                ui.invoke_focus_root();
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_move_selection(move |delta| update(&s, |c| c.move_selection(delta)));
+    }
+    {
+        let s = s.clone();
+        actions.on_expand_selected(move || update(&s, |c| {
+            if let Some(id) = c.selected {
+                c.toggle_expand(id);
+            }
+        }));
+    }
+    {
+        let s = s.clone();
+        actions.on_toggle_selected(move || {
+            let target = s.ctrl.borrow().focused_task();
+            if let Some(id) = target {
+                toggle(&s, id);
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_delete_selected(move || {
+            let target = s.ctrl.borrow().focused_task();
+            if let Some(id) = target {
+                delete(&s, id);
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        // Ctrl+D: abre a tarefa e, no frame seguinte (quando os detalhes já existem), o popover.
+        actions.on_date_selected(move || {
+            let target = s.ctrl.borrow().focused_task();
+            let Some(id) = target else { return };
+            update(&s, |c| c.expanded = Some(id));
+            let s1 = s.clone();
+            Timer::single_shot(Duration::from_millis(16), move || open_picker(&s1, id));
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_tag_selected(move || {
+            let target = s.ctrl.borrow().focused_task();
+            let Some(id) = target else { return };
+            update(&s, |c| c.expanded = Some(id));
+            let s1 = s.clone();
+            Timer::single_shot(Duration::from_millis(16), move || focus_tag_input(&s1, id));
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_toggle_filter(move || {
+            update(&s, |c| c.toggle_filter());
+            if let Some(ui) = s.ui.upgrade() {
+                if !ui.get_filter_visible() {
+                    ui.invoke_focus_root();
+                }
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_filter_changed(move |text| update(&s, |c| c.set_filter(&text)));
+    }
+}
+
+/// Timer alinhado à virada do minuto: recalcula "em 25 min"/"há 10 min", vira o dia e dispara o pulso.
+fn start_clock(s: &Rc<Shared>) -> Rc<Timer> {
+    let timer = Rc::new(Timer::default());
+    let now = s.ctrl.borrow().store.now();
+    let first = Duration::from_secs(60 - u64::from(now.second()));
+    let last = Rc::new(Cell::new(now));
+    let (s1, timer1) = (s.clone(), timer.clone());
+    Timer::single_shot(first, move || {
+        minute_tick(&s1, &last);
+        let (s2, last2) = (s1.clone(), last.clone());
+        timer1.start(TimerMode::Repeated, Duration::from_secs(60), move || minute_tick(&s2, &last2));
+    });
+    timer
+}
+
+fn minute_tick(s: &Rc<Shared>, last: &Cell<NaiveDateTime>) {
+    let now = s.ctrl.borrow().store.now();
+    let previous = last.replace(now);
+    let pulsed = s.ctrl.borrow_mut().tick(previous);
+    refresh(s);
+    if !pulsed.is_empty() {
+        let s1 = s.clone();
+        Timer::single_shot(Duration::from_millis(700), move || update(&s1, |c| c.clear_pulse()));
     }
 }
