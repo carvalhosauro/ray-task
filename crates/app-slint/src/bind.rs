@@ -2,11 +2,12 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
+use chrono::NaiveDate;
 use ray_core::writer::WriterEvent;
 use ray_core::{DomainError, TaskId, View};
 use slint::{Color, ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
 
-use crate::controller::{Controller, NavRow, Row};
+use crate::controller::{Controller, NavRow, QuickDate, Row};
 use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TaskItem};
 
 pub const TOAST_UNDO: i32 = 0;
@@ -20,7 +21,6 @@ pub(crate) enum Pending {
     RenameTag(ray_core::TagId),
     DeleteProject(ray_core::ProjectId),
     DeleteTag(ray_core::TagId),
-    #[allow(dead_code)] // constructed in Task 13
     MoveTask(TaskId, Option<ray_core::ProjectId>),
 }
 
@@ -57,6 +57,7 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
     });
     wire_tasks(ui, &shared);
     wire_projects(ui, &shared);
+    wire_details(ui, &shared);
     let timers = Vec::new();
     refresh(&shared);
     Binding { shared, _timers: timers }
@@ -502,5 +503,121 @@ fn wire_projects(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_dialog_cancel(move || close_dialogs(&s));
+    }
+}
+
+pub(crate) fn open_picker(s: &Rc<Shared>, id: TaskId) {
+    update(s, |c| c.open_popover(id));
+    if let Some(ui) = s.ui.upgrade() {
+        let picker = ui.global::<Picker>();
+        picker.set_open_for(id as i32);
+        picker.set_request(picker.get_request() + 1);
+    }
+}
+
+fn close_picker(s: &Shared) {
+    s.ctrl.borrow_mut().close_popover();
+    if let Some(ui) = s.ui.upgrade() {
+        let picker = ui.global::<Picker>();
+        picker.set_open_for(-1);
+        picker.set_close_request(picker.get_close_request() + 1);
+    }
+}
+
+#[allow(dead_code)] // used in Task 14 (Ctrl+T)
+pub(crate) fn focus_tag_input(s: &Shared, id: TaskId) {
+    if let Some(ui) = s.ui.upgrade() {
+        let actions = ui.global::<Actions>();
+        actions.set_focus_tag_task(id as i32);
+        actions.set_focus_tag_request(actions.get_focus_tag_request() + 1);
+    }
+}
+
+fn request_move(s: &Rc<Shared>, id: TaskId, to: Option<ray_core::ProjectId>) {
+    if s.ctrl.borrow().move_needs_confirm(id, to) {
+        open_confirm(
+            s,
+            "Mover tarefa?",
+            "As tags desta tarefa serão removidas, porque cada projeto tem as suas.",
+            "Mover",
+            Pending::MoveTask(id, to),
+        );
+    } else {
+        update(s, |c| {
+            log_err(c.move_task(id, to), "mover tarefa");
+        });
+    }
+}
+
+fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
+    let picker = ui.global::<Picker>();
+    {
+        let s = s.clone();
+        picker.on_open(move |id| open_picker(&s, id as TaskId));
+    }
+    {
+        let s = s.clone();
+        picker.on_shift_month(move |delta| update(&s, |c| c.shift_popover_month(delta)));
+    }
+    {
+        let s = s.clone();
+        picker.on_pick(move |id, iso| {
+            let date = NaiveDate::parse_from_str(&iso, "%Y-%m-%d").ok();
+            if date.is_some() {
+                log_err(s.ctrl.borrow_mut().set_date(id as TaskId, date), "escolher data");
+            }
+            close_picker(&s);
+            refresh(&s);
+        });
+    }
+    {
+        let s = s.clone();
+        picker.on_quick(move |id, kind| {
+            let quick = match kind {
+                0 => QuickDate::Today,
+                1 => QuickDate::Tomorrow,
+                2 => QuickDate::NextWeek,
+                _ => QuickDate::Clear,
+            };
+            log_err(s.ctrl.borrow_mut().quick_date(id as TaskId, quick), "data rápida");
+            close_picker(&s);
+            refresh(&s);
+        });
+    }
+    {
+        let s = s.clone();
+        picker.on_set_time(move |id, text| update(&s, |c| {
+            if log_err(c.set_time(id as TaskId, &text), "hora") == Some(false) {
+                tracing::info!(%text, "hora inválida ignorada");
+            }
+        }));
+    }
+
+    let actions = ui.global::<Actions>();
+    {
+        let s = s.clone();
+        actions.on_add_tag(move |id, name| update(&s, |c| {
+            log_err(c.add_tag_by_name(id as TaskId, &name), "adicionar tag");
+        }));
+    }
+    {
+        let s = s.clone();
+        actions.on_remove_tag(move |id, tag| update(&s, |c| {
+            log_err(c.remove_tag(id as TaskId, tag as i64), "remover tag");
+        }));
+    }
+    {
+        let s = s.clone();
+        actions.on_remove_last_tag(move |id| update(&s, |c| {
+            log_err(c.remove_last_tag(id as TaskId), "remover última tag");
+        }));
+    }
+    {
+        let s = s.clone();
+        actions.on_tag_suggest(move |id, prefix| s.ctrl.borrow().tag_suggestion(id as TaskId, &prefix).into());
+    }
+    {
+        let s = s.clone();
+        actions.on_request_move(move |id, to| request_move(&s, id as TaskId, (to >= 0).then_some(to as i64)));
     }
 }
