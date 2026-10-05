@@ -1,0 +1,172 @@
+import { Theme } from "theme.slint";
+import { NavItem } from "types.slint";
+import { Actions } from "globals.slint";
+import { Icon, MenuPanel, MenuEntry } from "components.slint";
+
+component NavRowView inherits Rectangle {
+    in property <NavItem> item;
+    in property <int> index;
+    in property <bool> selected;
+    height: 32px;
+    border-radius: 8px;
+    background: !root.selected && touch.has-hover ? Theme.selection.with-alpha(0.5) : transparent;
+    accessible-role: button;
+    accessible-label: root.item.label;
+    touch := TouchArea {
+        clicked => { Actions.select-nav(root.index); }
+        pointer-event(event) => {
+            if (root.item.kind == 3 && event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+                menu.show();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        Rectangle {
+            width: 18px;
+            if root.item.kind == 0 : Icon { source: @image-url("icons/sun.svg"); colorize: Theme.today-icon; }
+            if root.item.kind == 1 : Icon { source: @image-url("icons/calendar.svg"); colorize: Theme.upcoming-icon; }
+            if root.item.kind == 2 : Icon { source: @image-url("icons/tray.svg"); colorize: Theme.inbox-icon; }
+            if root.item.kind == 3 : Rectangle { width: 10px; height: 10px; border-radius: 5px; background: root.item.color; }
+        }
+        Text {
+            text: root.item.label;
+            color: Theme.text;
+            font-size: 14px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: root.item.count > 0 ? "\{root.item.count}" : "";
+            color: root.item.alert ? Theme.red : Theme.sub;
+            font-weight: root.item.alert ? 600 : 400;
+            font-size: 12.5px;
+            vertical-alignment: center;
+        }
+    }
+    // Menu do projeto (clique direito): renomear, cor, apagar.
+    menu := PopupWindow {
+        x: touch.mouse-x;
+        y: touch.mouse-y;
+        width: 200px;
+        height: 4 * 30px + 30px + 12px;
+        MenuPanel {
+            VerticalLayout {
+                padding: 5px;
+                MenuEntry { text: "Renomear…"; clicked => { Actions.begin-rename-project(root.item.project-id); } }
+                HorizontalLayout {
+                    height: 30px;
+                    padding-left: 10px;
+                    spacing: 6px;
+                    for c[i] in [#0A84FF, #FF9F0A, #BF5AF2, #30D158, #FF453A, #64D2FF, #FFD60A] : Rectangle {
+                        width: 18px;
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            background: c;
+                            border-width: c == root.item.color ? 2px : 0px;
+                            border-color: Theme.text;
+                            TouchArea { clicked => { Actions.set-project-color(root.item.project-id, i); } }
+                        }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.line; }
+                MenuEntry { text: "Apagar projeto…"; danger: true; clicked => { Actions.request-delete-project(root.item.project-id); } }
+                Rectangle { }
+            }
+        }
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    in property <[NavItem]> nav;
+    in property <int> selected;
+    width: 220px;
+    background: Theme.side;
+
+    // Posição vertical de cada item (3 visões fixas, título "Projetos", projetos).
+    pure function row-y(i: int) -> length {
+        return 4px + i * 34px + (i >= 3 ? 40px : 0px);
+    }
+
+    Rectangle { x: parent.width - 1px; width: 1px; background: Theme.line; }
+
+    Rectangle {
+        x: 10px;
+        y: 14px;
+        width: parent.width - 20px;
+        height: 30px;
+        border-radius: 8px;
+        background: Theme.field;
+        accessible-role: button;
+        accessible-label: "Buscar";
+        TouchArea { clicked => { Actions.toggle-filter(); } }
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 8px;
+            spacing: 8px;
+            Rectangle {
+                width: 14px;
+                Icon { size: 14px; source: @image-url("icons/search.svg"); colorize: Theme.sub; }
+            }
+            Text { text: "Buscar"; color: Theme.sub; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
+            Text { text: "Ctrl F"; color: Theme.faint; font-size: 11px; vertical-alignment: center; }
+        }
+    }
+
+    Flickable {
+        y: 52px;
+        height: parent.height - 52px - 48px;
+        content-height: root.row-y(root.nav.length) + 12px;
+        Rectangle {
+            x: 10px;
+            y: root.row-y(root.selected);
+            width: parent.width - 20px;
+            height: 32px;
+            border-radius: 8px;
+            background: Theme.selection;
+            animate y { duration: 220ms; easing: cubic-bezier(0.3, 0.7, 0.2, 1); }
+        }
+        Text {
+            x: 20px;
+            y: root.row-y(3) - 26px;
+            text: "Projetos";
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.sub;
+        }
+        for item[i] in root.nav : NavRowView {
+            x: 10px;
+            y: root.row-y(i);
+            width: parent.width - 20px;
+            item: item;
+            index: i;
+            selected: i == root.selected;
+        }
+    }
+
+    Rectangle {
+        x: 10px;
+        y: parent.height - 44px;
+        width: parent.width - 20px;
+        height: 32px;
+        border-radius: 8px;
+        background: np.has-hover ? Theme.selection.with-alpha(0.5) : transparent;
+        accessible-role: button;
+        accessible-label: "Novo projeto";
+        np := TouchArea { clicked => { Actions.new-project(); } }
+        HorizontalLayout {
+            padding-left: 10px;
+            spacing: 10px;
+            Rectangle {
+                width: 18px;
+                Icon { size: 16px; source: @image-url("icons/plus.svg"); colorize: Theme.sub; }
+            }
+            Text { text: "Novo projeto"; color: Theme.sub; font-size: 14px; vertical-alignment: center; }
+        }
+    }
+}

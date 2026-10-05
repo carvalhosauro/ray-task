@@ -1,29 +1,55 @@
-use ray_core::db;
+use std::time::{Duration, Instant};
+
+use ray_core::writer::{SqliteSink, Writer};
+use ray_core::{db, Store, SystemClock};
+use ray_task::controller::Controller;
 use ray_task::paths::{self, LockError, Paths};
-use ray_task::{logging, AppWindow};
+use ray_task::{bind, logging, AppWindow};
 use slint::ComponentHandle;
 
 fn main() -> Result<(), slint::PlatformError> {
+    let started = Instant::now();
     let paths = Paths::from_env();
     let _log = logging::init(&paths.log_dir);
     let ui = AppWindow::new()?;
+
     let _lock = match paths::acquire_lock(&paths.lock) {
         Ok(lock) => lock,
-        Err(LockError::AlreadyRunning) => {
-            ui.set_fatal_error("O ray-task já está aberto em outra janela.".into());
-            return ui.run();
-        }
-        Err(LockError::Io(e)) => {
-            ui.set_fatal_error(format!("Não foi possível criar o lock em {}:\n{e}", paths.lock.display()).into());
-            return ui.run();
+        Err(LockError::AlreadyRunning) => return fatal(&ui, "O ray-task já está aberto em outra janela.".into()),
+        Err(LockError::Io(e)) => return fatal(&ui, format!("Não foi possível criar o lock em {}:\n{e}", paths.lock.display())),
+    };
+
+    let opened = db::open(&paths.db).and_then(|conn| db::load(&conn).map(|snapshot| (conn, snapshot)));
+    let (conn, snapshot) = match opened {
+        Ok(pair) => pair,
+        Err(e) => {
+            tracing::error!(%e, path = %paths.db.display(), "abrir banco");
+            return fatal(&ui, format!("Não foi possível abrir o banco de dados:\n{}\n\n{e}", paths.db.display()));
         }
     };
-    match db::open(&paths.db).and_then(|conn| db::load(&conn)) {
-        Ok(snapshot) => ui.set_status(format!("{} tarefas carregadas", snapshot.tasks.len()).into()),
-        Err(e) => {
-            tracing::error!(%e, "abrir banco");
-            ui.set_fatal_error(format!("Não foi possível abrir o banco de dados:\n{}\n\n{e}", paths.db.display()).into());
-        }
+
+    let weak = ui.as_weak();
+    let writer = Writer::spawn(SqliteSink(conn), move |event| {
+        let _ = weak.upgrade_in_event_loop(move |ui| bind::show_writer_event(&ui, &event));
+    });
+    let handle = writer.handle();
+    let retry = writer.handle();
+    let controller = Controller::new(Store::new(snapshot, Box::new(SystemClock)), Box::new(move |ops| handle.send(ops)));
+    let binding = bind::bind(&ui, controller, Box::new(move || retry.retry()));
+    ui.invoke_focus_root();
+    tracing::info!(ms = started.elapsed().as_millis() as u64, "pronto");
+
+    ui.run()?;
+    drop(binding);
+    match writer.shutdown(Duration::from_secs(2)) {
+        Some(0) => {}
+        Some(pending) => tracing::error!(pending, "gravações não concluídas ao fechar"),
+        None => tracing::error!("a fila de gravação não terminou em 2 s"),
     }
+    Ok(())
+}
+
+fn fatal(ui: &AppWindow, message: String) -> Result<(), slint::PlatformError> {
+    ui.set_fatal_error(message.into());
     ui.run()
 }

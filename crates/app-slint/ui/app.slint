@@ -3,8 +3,89 @@ import "../assets/fonts/Inter-Medium.ttf";
 import "../assets/fonts/Inter-SemiBold.ttf";
 import "../assets/fonts/Inter-Bold.ttf";
 import { Theme } from "theme.slint";
+import { NavItem, TaskItem } from "types.slint";
+import { Actions, Picker } from "globals.slint";
+import { Icon, IconButton, Dialog, DialogButton } from "components.slint";
+import { Sidebar } from "sidebar.slint";
+import { TaskRow } from "task_row.slint";
 export { Actions, Picker } from "globals.slint";
 export { TagChip, NavItem, TaskItem, CalCell, ProjectChoice } from "types.slint";
+
+component NewTaskRow inherits Rectangle {
+    height: 44px;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        Rectangle {
+            width: 32px;
+            Rectangle { width: 22px; height: 22px; border-radius: 11px; border-width: 1.5px; border-color: Theme.ring; }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            input := TextInput {
+                font-size: 15px;
+                color: Theme.text;
+                vertical-alignment: center;
+                single-line: true;
+                accessible-label: "Nova tarefa";
+                init => { self.focus(); }
+                accepted => {
+                    Actions.commit-new(self.text);
+                    self.text = "";
+                }
+            }
+            if input.text == "" : Text { x: 0px; text: "Nova tarefa"; font-size: 15px; color: Theme.faint; vertical-alignment: center; }
+        }
+    }
+}
+
+component NewTaskButton inherits Rectangle {
+    height: 44px;
+    border-radius: 10px;
+    background: touch.has-hover ? Theme.selection.with-alpha(0.4) : transparent;
+    accessible-role: button;
+    accessible-label: "Nova tarefa";
+    touch := TouchArea { clicked => { Actions.new-task(); } }
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 6px;
+        Rectangle {
+            width: 32px;
+            Icon { size: 18px; source: @image-url("icons/plus.svg"); colorize: Theme.accent; }
+        }
+        Text { text: "Nova tarefa"; font-size: 15px; color: Theme.sub; vertical-alignment: center; }
+    }
+}
+
+component FilterField inherits Rectangle {
+    width: 200px;
+    height: 30px;
+    border-radius: 8px;
+    background: Theme.field;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        Rectangle {
+            width: 14px;
+            Icon { size: 14px; source: @image-url("icons/search.svg"); colorize: Theme.sub; }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            input := TextInput {
+                font-size: 13px;
+                color: Theme.text;
+                vertical-alignment: center;
+                single-line: true;
+                accessible-label: "Filtrar";
+                init => { self.focus(); }
+                edited => { Actions.filter-changed(self.text); }
+            }
+            if input.text == "" : Text { x: 0px; text: "Filtrar"; font-size: 13px; color: Theme.faint; vertical-alignment: center; }
+        }
+    }
+}
 
 export component AppWindow inherits Window {
     title: "ray-task";
@@ -14,26 +95,220 @@ export component AppWindow inherits Window {
     min-height: 420px;
     default-font-family: "Inter";
     background: Theme.bg;
-    in property <string> fatal-error;
-    in property <string> status;
 
-    VerticalLayout {
-        alignment: center;
-        padding: 48px;
-        spacing: 12px;
-        Text {
-            text: root.fatal-error != "" ? "Não foi possível iniciar" : "ray-task";
-            font-size: 20px;
-            font-weight: 700;
-            color: Theme.text;
-            horizontal-alignment: center;
+    in property <string> fatal-error;
+    in property <[NavItem]> nav;
+    in property <int> selected-nav;
+    in property <string> view-title;
+    in property <string> view-subtitle;
+    in property <[TaskItem]> tasks;
+    in property <int> expanded-id: -1;
+    in property <int> selected-id: -1;
+    in property <bool> adding;
+    in property <string> empty-text;
+    in property <string> done-toggle-label;
+    in property <bool> filter-visible;
+    in property <bool> content-faded;
+    in property <bool> toast-visible;
+    in property <string> toast-text;
+    in property <string> toast-action;
+    in-out property <int> toast-kind;
+    in property <bool> prompt-visible;
+    in property <string> prompt-title;
+    in property <string> prompt-text;
+    in property <string> prompt-error;
+    in property <bool> confirm-visible;
+    in property <string> confirm-title;
+    in property <string> confirm-message;
+    in property <string> confirm-button;
+
+    public function focus-root() { keys.focus(); }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.modifiers.control) {
+                if (event.text == "n" || event.text == "N") {
+                    if (event.modifiers.shift) { Actions.new-project(); } else { Actions.new-task(); }
+                    return accept;
+                }
+                if (event.text == "f" || event.text == "F") { Actions.toggle-filter(); return accept; }
+                if (event.text == "z" || event.text == "Z") { Actions.undo(); return accept; }
+                if (event.text == "d" || event.text == "D") { Actions.date-selected(); return accept; }
+                if (event.text == "t" || event.text == "T") { Actions.tag-selected(); return accept; }
+                if (event.text == Key.Return) { Actions.toggle-selected(); return accept; }
+                if (event.text == "1") { Actions.select-nav(0); return accept; }
+                if (event.text == "2") { Actions.select-nav(1); return accept; }
+                if (event.text == "3") { Actions.select-nav(2); return accept; }
+                return reject;
+            }
+            if (event.text == Key.UpArrow) { Actions.move-selection(-1); return accept; }
+            if (event.text == Key.DownArrow) { Actions.move-selection(1); return accept; }
+            if (event.text == Key.Return) { Actions.expand-selected(); return accept; }
+            if (event.text == Key.Escape) { Actions.escape(); return accept; }
+            if (event.text == Key.Delete) { Actions.delete-selected(); return accept; }
+            return reject;
         }
-        Text {
-            text: root.fatal-error != "" ? root.fatal-error : root.status;
-            font-size: 14px;
-            color: Theme.sub;
-            wrap: word-wrap;
-            horizontal-alignment: center;
+
+        if root.fatal-error != "" : Rectangle {
+            background: Theme.bg;
+            VerticalLayout {
+                alignment: center;
+                padding: 48px;
+                spacing: 12px;
+                Text { text: "Não foi possível iniciar"; font-size: 20px; font-weight: 700; color: Theme.text; horizontal-alignment: center; }
+                Text { text: root.fatal-error; font-size: 14px; color: Theme.sub; wrap: word-wrap; horizontal-alignment: center; }
+            }
+        }
+
+        if root.fatal-error == "" : HorizontalLayout {
+            Sidebar { nav: root.nav; selected: root.selected-nav; }
+            main := Rectangle {
+                horizontal-stretch: 1;
+                Rectangle {
+                    opacity: root.content-faded ? 0 : 1;
+                    animate opacity { duration: 60ms; easing: ease-out; }
+                    VerticalLayout {
+                        HorizontalLayout {
+                            padding-left: 32px;
+                            padding-right: 24px;
+                            padding-top: 28px;
+                            padding-bottom: 10px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                spacing: 4px;
+                                Text { text: root.view-title; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: Theme.text; }
+                                Text { text: root.view-subtitle; font-size: 13px; color: Theme.sub; }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            if root.filter-visible : VerticalLayout {
+                                alignment: center;
+                                FilterField { }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                IconButton {
+                                    icon: @image-url("icons/plus.svg");
+                                    tint: Theme.accent;
+                                    label: "Nova tarefa";
+                                    clicked => { Actions.new-task(); }
+                                }
+                            }
+                        }
+                        Flickable {
+                            vertical-stretch: 1;
+                            content-height: list.preferred-height;
+                            list := VerticalLayout {
+                                padding-left: 20px;
+                                padding-right: 20px;
+                                padding-bottom: 20px;
+                                alignment: start;
+                                for item in root.tasks : TaskRow {
+                                    item: item;
+                                    expanded: item.id == root.expanded-id;
+                                    selected: item.id == root.selected-id;
+                                }
+                                if root.adding : NewTaskRow { }
+                                if !root.adding : NewTaskButton { }
+                                if root.done-toggle-label != "" : HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-top: 12px;
+                                    Text {
+                                        text: root.done-toggle-label;
+                                        font-size: 13px;
+                                        color: Theme.sub;
+                                        TouchArea { clicked => { Actions.toggle-show-done(); } }
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                if root.empty-text != "" : Text {
+                                    text: root.empty-text;
+                                    font-size: 14px;
+                                    color: Theme.sub;
+                                    horizontal-alignment: center;
+                                    height: 120px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Toast: "Tarefa concluída · Desfazer" / "Falha ao salvar · Tentar de novo"
+                toast := Rectangle {
+                    width: toast-layout.preferred-width;
+                    height: 40px;
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height - 20px + (root.toast-visible ? 0px : 20px);
+                    opacity: root.toast-visible ? 1 : 0;
+                    animate opacity { duration: 200ms; easing: ease-out; }
+                    animate y { duration: 250ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+                    border-radius: 12px;
+                    background: Theme.toast;
+                    drop-shadow-blur: 24px;
+                    drop-shadow-offset-y: 8px;
+                    drop-shadow-color: #00000040;
+                    toast-layout := HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 6px;
+                        spacing: 12px;
+                        Text { text: root.toast-text; color: white; font-size: 13.5px; vertical-alignment: center; }
+                        Rectangle {
+                            width: action-text.preferred-width + 16px;
+                            border-radius: 6px;
+                            background: action-touch.has-hover ? #ffffff1a : transparent;
+                            accessible-role: button;
+                            accessible-label: root.toast-action;
+                            action-touch := TouchArea {
+                                enabled: root.toast-visible;
+                                clicked => { Actions.toast-action(); }
+                            }
+                            action-text := Text { text: root.toast-action; color: #64B0FF; font-size: 13.5px; font-weight: 600; }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.prompt-visible : Dialog {
+            Text { text: root.prompt-title; font-size: 15px; font-weight: 600; color: Theme.text; }
+            Rectangle {
+                height: 32px;
+                border-radius: 8px;
+                background: Theme.field;
+                prompt-input := TextInput {
+                    x: 10px;
+                    width: parent.width - 20px;
+                    text: root.prompt-text;
+                    font-size: 14px;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    single-line: true;
+                    accessible-label: root.prompt-title;
+                    init => {
+                        self.focus();
+                        self.select-all();
+                    }
+                    accepted => { Actions.prompt-accept(self.text); }
+                }
+            }
+            if root.prompt-error != "" : Text { text: root.prompt-error; font-size: 12.5px; color: Theme.red; wrap: word-wrap; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                DialogButton { text: "Cancelar"; clicked => { Actions.dialog-cancel(); } }
+                DialogButton { text: "OK"; primary: true; clicked => { Actions.prompt-accept(prompt-input.text); } }
+            }
+        }
+
+        if root.confirm-visible : Dialog {
+            Text { text: root.confirm-title; font-size: 15px; font-weight: 600; color: Theme.text; wrap: word-wrap; }
+            Text { text: root.confirm-message; font-size: 13.5px; color: Theme.sub; wrap: word-wrap; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                DialogButton { text: "Cancelar"; clicked => { Actions.dialog-cancel(); } }
+                DialogButton { text: root.confirm-button; danger: true; clicked => { Actions.confirm-accept(); } }
+            }
         }
     }
 }

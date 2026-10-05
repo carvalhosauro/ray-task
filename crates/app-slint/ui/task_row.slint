@@ -1,0 +1,438 @@
+import { Theme } from "theme.slint";
+import { TaskItem, TagChip } from "types.slint";
+import { Actions, Picker } from "globals.slint";
+import { Icon, CheckCircle, Chip, Pill, MenuPanel, MenuEntry } from "components.slint";
+
+component QuickOption inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint;
+    in property <string> text;
+    in property <string> hint;
+    callback clicked;
+    height: 34px;
+    border-radius: 8px;
+    background: touch.has-hover ? Theme.chip : transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    touch := TouchArea { clicked => { root.clicked(); } }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        Rectangle {
+            width: 16px;
+            Icon { size: 16px; source: root.icon; colorize: root.tint; }
+        }
+        Text { text: root.text; color: Theme.text; font-size: 13.5px; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: root.hint; color: Theme.sub; font-size: 12px; vertical-alignment: center; }
+    }
+}
+
+/// Conteúdo do popover de data (atalhos, mini-calendário, hora).
+component DatePopover inherits MenuPanel {
+    in property <int> task-id;
+    width: 264px;
+    VerticalLayout {
+        padding: 6px;
+        QuickOption { icon: @image-url("icons/sun.svg"); tint: #FF9F0A; text: "Hoje"; clicked => { Picker.quick(root.task-id, 0); } }
+        QuickOption { icon: @image-url("icons/sunrise.svg"); tint: #FF9F0A; text: "Amanhã"; clicked => { Picker.quick(root.task-id, 1); } }
+        QuickOption { icon: @image-url("icons/arrow-right.svg"); tint: #BF5AF2; text: "Próxima semana"; hint: Picker.next-week-hint; clicked => { Picker.quick(root.task-id, 2); } }
+        QuickOption { icon: @image-url("icons/xmark.svg"); tint: Theme.sub; text: "Sem data"; clicked => { Picker.quick(root.task-id, 3); } }
+        Rectangle { height: 1px; background: Theme.line; }
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 4px;
+            height: 32px;
+            Text { text: Picker.month-title; font-size: 13px; font-weight: 600; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+            Rectangle {
+                width: 28px;
+                accessible-role: button;
+                accessible-label: "Mês anterior";
+                TouchArea { clicked => { Picker.shift-month(-1); } }
+                Icon { size: 14px; source: @image-url("icons/chevron-left.svg"); colorize: Theme.accent; }
+            }
+            Rectangle {
+                width: 28px;
+                accessible-role: button;
+                accessible-label: "Próximo mês";
+                TouchArea { clicked => { Picker.shift-month(1); } }
+                Icon { size: 14px; source: @image-url("icons/chevron-right.svg"); colorize: Theme.accent; }
+            }
+        }
+        cal := Rectangle {
+            property <length> cw: (self.width - 8px) / 7;
+            height: 20px + 32px * Math.ceil(Picker.cells.length / 7);
+            for wd[i] in ["D", "S", "T", "Q", "Q", "S", "S"] : Text {
+                x: 4px + i * cal.cw;
+                y: 0px;
+                width: cal.cw;
+                height: 18px;
+                text: wd;
+                font-size: 11px;
+                color: Theme.sub;
+                horizontal-alignment: center;
+            }
+            for cell[i] in Picker.cells : Rectangle {
+                x: 4px + Math.mod(i, 7) * cal.cw + (cal.cw - 30px) / 2;
+                y: 20px + Math.floor(i / 7) * 32px;
+                width: 30px;
+                height: 30px;
+                border-radius: 15px;
+                visible: cell.day > 0;
+                background: cell.selected ? Theme.accent : day.has-hover ? Theme.chip : transparent;
+                accessible-role: button;
+                accessible-label: "Dia \{cell.day}";
+                day := TouchArea {
+                    enabled: cell.day > 0;
+                    clicked => { Picker.pick(root.task-id, cell.iso); }
+                }
+                Text {
+                    text: "\{cell.day}";
+                    font-size: 12.5px;
+                    font-weight: (cell.today || cell.selected) ? 600 : 400;
+                    color: cell.selected ? white : cell.today ? Theme.accent : cell.past ? Theme.faint : Theme.text;
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.line; }
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            height: 38px;
+            spacing: 8px;
+            Rectangle {
+                width: 14px;
+                Icon { size: 14px; source: @image-url("icons/clock.svg"); colorize: Theme.sub; }
+            }
+            Text { text: "Hora"; font-size: 13px; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+            Rectangle {
+                width: 64px;
+                height: 26px;
+                border-radius: 6px;
+                background: Theme.field;
+                time-input := TextInput {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    text: Picker.time-text;
+                    font-size: 13px;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    single-line: true;
+                    accepted => { Picker.set-time(root.task-id, self.text); }
+                }
+                if time-input.text == "" && !time-input.has-focus : Text {
+                    x: 8px;
+                    text: "--:--";
+                    font-size: 13px;
+                    color: Theme.faint;
+                }
+            }
+            Rectangle {
+                width: 22px;
+                accessible-role: button;
+                accessible-label: "Remover hora";
+                TouchArea { clicked => { Picker.set-time(root.task-id, ""); } }
+                Icon { size: 12px; source: @image-url("icons/xmark.svg"); colorize: Theme.sub; }
+            }
+        }
+    }
+}
+
+/// Pill de tag nos detalhes: clique abre o menu (remover, renomear, apagar).
+component TagPill inherits Pill {
+    in property <int> task-id;
+    in property <TagChip> tag;
+    text: "#" + root.tag.name;
+    fg: Theme.sub;
+    clicked => { tag-menu.show(); }
+    tag-menu := PopupWindow {
+        y: root.height + 4px;
+        width: 190px;
+        height: 3 * 30px + 10px;
+        MenuPanel {
+            VerticalLayout {
+                padding: 5px;
+                MenuEntry { text: "Remover da tarefa"; clicked => { Actions.remove-tag(root.task-id, root.tag.id); } }
+                MenuEntry { text: "Renomear tag…"; clicked => { Actions.begin-rename-tag(root.tag.id); } }
+                MenuEntry { text: "Apagar tag…"; danger: true; clicked => { Actions.request-delete-tag(root.tag.id); } }
+            }
+        }
+    }
+}
+
+/// Campo "+ Tag" com sugestão em cinza (Tab ou Enter aceitam a sugestão).
+component TagInput inherits Rectangle {
+    in property <int> task-id;
+    // Sempre existe (para o Ctrl+T conseguir focar); some na Entrada, que não tem tags.
+    in property <bool> shown: true;
+    property <string> suggestion: Actions.tag-suggest(root.task-id, input.text);
+    public function grab() { input.focus(); }
+    visible: root.shown;
+    width: root.shown ? 132px : 0px;
+    height: 28px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.ring;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 6px;
+        Rectangle {
+            width: 13px;
+            Icon { size: 13px; source: @image-url("icons/plus.svg"); colorize: Theme.sub; }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            Text {
+                x: 0px;
+                width: parent.width;
+                text: input.text == "" && !input.has-focus ? "Tag" : root.suggestion;
+                font-size: 13px;
+                color: Theme.faint;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            input := TextInput {
+                font-size: 13px;
+                color: Theme.text;
+                vertical-alignment: center;
+                single-line: true;
+                accessible-label: "Adicionar tag";
+                accepted => {
+                    Actions.add-tag(root.task-id, root.suggestion != "" ? root.suggestion : self.text);
+                    self.text = "";
+                }
+                key-pressed(event) => {
+                    if (event.text == Key.Backspace && self.text == "") {
+                        Actions.remove-last-tag(root.task-id);
+                        return accept;
+                    }
+                    if (event.text == Key.Tab && root.suggestion != "") {
+                        self.text = root.suggestion;
+                        return accept;
+                    }
+                    return reject;
+                }
+            }
+        }
+    }
+}
+
+/// Área aberta de uma tarefa: notas, data, hora, tags e projeto.
+component TaskDetails inherits Rectangle {
+    in property <TaskItem> item;
+    property <int> open-req: Picker.request;
+    property <int> close-req: Picker.close-request;
+    property <int> tag-req: Actions.focus-tag-request;
+    changed open-req => {
+        if (Picker.open-for == root.item.id) {
+            date-popup.show();
+        }
+    }
+    changed close-req => { date-popup.close(); }
+    changed tag-req => {
+        if (Actions.focus-tag-task == root.item.id && root.item.has-project) {
+            tag-input.grab();
+        }
+    }
+
+    VerticalLayout {
+        padding-left: 38px;
+        padding-top: 4px;
+        spacing: 12px;
+        Rectangle {
+            min-height: max(20px, notes.preferred-height);
+            notes := TextInput {
+                text: root.item.notes;
+                single-line: false;
+                wrap: word-wrap;
+                font-size: 14px;
+                color: Theme.sub;
+                accessible-label: "Notas";
+                edited => { Actions.edit(root.item.id, root.item.title, self.text); }
+            }
+            if notes.text == "" : Text {
+                x: 0px;
+                y: 0px;
+                text: "Notas";
+                font-size: 14px;
+                color: Theme.faint;
+            }
+        }
+        pills := HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            date-pill := Pill {
+                has-icon: true;
+                icon: @image-url("icons/calendar.svg");
+                text: root.item.date-label;
+                fg: root.item.date-tone == 2 ? Theme.red : Theme.text;
+                clicked => { Picker.open(root.item.id); }
+            }
+            if root.item.time-label != "" : Pill {
+                has-icon: true;
+                icon: @image-url("icons/clock.svg");
+                text: root.item.time-label;
+                fg: root.item.time-tone == 2 ? Theme.red : root.item.time-tone == 1 ? Theme.orange : Theme.text;
+                clicked => { Picker.open(root.item.id); }
+            }
+            for tag in root.item.tags : TagPill { task-id: root.item.id; tag: tag; }
+            tag-input := TagInput { task-id: root.item.id; shown: root.item.has-project; }
+            Rectangle { horizontal-stretch: 1; }
+            project-pill := Pill {
+                text: root.item.project-name;
+                fg: Theme.sub;
+                clicked => { move-menu.show(); }
+            }
+        }
+    }
+
+    date-popup := PopupWindow {
+        x: date-pill.x + 38px;
+        y: pills.y + date-pill.height + 6px;
+        width: 264px;
+        height: 4 * 34px + 1px + 32px + 20px + 32px * 6 + 1px + 38px + 12px;
+        DatePopover { task-id: root.item.id; }
+    }
+
+    move-menu := PopupWindow {
+        x: root.width - 200px;
+        y: pills.y + project-pill.height + 6px;
+        width: 200px;
+        height: Actions.move-targets.length * 30px + 30px + 10px;
+        MenuPanel {
+            VerticalLayout {
+                padding: 5px;
+                Text { height: 30px; x: 10px; text: "Mover para"; font-size: 12px; font-weight: 600; color: Theme.sub; vertical-alignment: center; }
+                for target in Actions.move-targets : MenuEntry {
+                    text: target.label;
+                    has-dot: true;
+                    dot: target.color;
+                    clicked => { Actions.request-move(root.item.id, target.id); }
+                }
+            }
+        }
+    }
+}
+
+export component TaskRow inherits Rectangle {
+    in property <TaskItem> item;
+    in property <bool> expanded;
+    in property <bool> selected;
+
+    // Linha nova entra crescendo uma vez; linha saindo encolhe até 0.
+    property <bool> born: !root.item.fresh;
+    property <bool> hidden: !root.born || root.item.leaving;
+    init => { root.born = true; }
+
+    height: root.hidden ? 0px : body.preferred-height;
+    opacity: root.hidden ? 0 : 1;
+    clip: root.hidden;
+    animate height { duration: 200ms; easing: ease-out; }
+    animate opacity { duration: 200ms; easing: ease-out; }
+
+    body := VerticalLayout {
+        alignment: start;
+        if root.item.group-header != "" : VerticalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 18px;
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: root.item.group-header; font-size: 15px; font-weight: 600; color: Theme.text; }
+                Text { text: root.item.group-sub; font-size: 13px; color: Theme.sub; vertical-alignment: bottom; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+        }
+        Rectangle {
+            border-radius: 10px;
+            background: root.expanded ? Theme.card : root.selected ? Theme.selection.with-alpha(0.45) : transparent;
+            drop-shadow-blur: root.expanded ? 16px : 0px;
+            drop-shadow-offset-y: root.expanded ? 4px : 0px;
+            drop-shadow-color: root.expanded ? Theme.shadow : transparent;
+            animate background, drop-shadow-blur, drop-shadow-offset-y, drop-shadow-color { duration: 200ms; easing: ease-out; }
+
+            // Pulso laranja quando a hora da tarefa chega (app aberto).
+            Rectangle {
+                border-radius: 10px;
+                background: Theme.orange.with-alpha(root.item.pulse ? 0.22 : 0);
+                animate background { duration: 400ms; easing: ease-out; }
+            }
+
+            VerticalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: root.expanded ? 12px : 6px;
+                padding-bottom: root.expanded ? 12px : 6px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: start;
+                        CheckCircle {
+                            done: root.item.done;
+                            label: root.item.title;
+                            clicked => { Actions.toggle(root.item.id); }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 0px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            min-height: 32px;
+                            if !root.expanded : Text {
+                                text: root.item.title;
+                                font-size: 15px;
+                                color: root.item.done ? Theme.sub : Theme.text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                max-width: self.preferred-width;
+                                horizontal-stretch: 1;
+                                TouchArea { clicked => { Actions.expand(root.item.id); } }
+                            }
+                            if root.expanded : TextInput {
+                                text: root.item.title;
+                                font-size: 15px;
+                                font-weight: 600;
+                                color: Theme.text;
+                                vertical-alignment: center;
+                                single-line: true;
+                                horizontal-stretch: 1;
+                                accessible-label: "Título";
+                                edited => { Actions.edit(root.item.id, self.text, root.item.notes); }
+                                accepted => { Actions.escape(); }
+                            }
+                            if !root.expanded : HorizontalLayout {
+                                spacing: 6px;
+                                for tag in root.item.tags : VerticalLayout {
+                                    alignment: center;
+                                    Chip { text: "#" + tag.name; }
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            if !root.expanded && root.item.meta != "" : Text {
+                                text: root.item.meta;
+                                font-size: 13px;
+                                color: root.item.tone == 2 ? Theme.red : root.item.tone == 1 ? Theme.orange : Theme.sub;
+                                vertical-alignment: center;
+                            }
+                        }
+                        if root.item.show-project && !root.expanded : HorizontalLayout {
+                            spacing: 6px;
+                            padding-bottom: 4px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: root.item.project-color; }
+                            }
+                            Text { text: root.item.project-name; font-size: 12.5px; color: Theme.sub; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+                if root.expanded : TaskDetails { item: root.item; }
+            }
+        }
+    }
+}
