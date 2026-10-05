@@ -10,3 +10,7 @@ pub mod db;
 pub mod ops;
 
 pub use ops::WriteOp;
+
+pub mod store;
+
+pub use store::Store;
