@@ -296,3 +296,17 @@ fn calendar_follows_popover_month() {
     f.c.close_popover();
     assert!(f.c.popover_task.is_none());
 }
+
+#[test]
+fn undo_after_leaving_started_clears_animation_state() {
+    let mut f = at("2026-10-05 13:35");
+    let id = f.c.commit_new("x").unwrap();
+    f.c.toggle(id).unwrap();
+    assert!(f.c.start_leaving(id));
+    assert!(f.c.undo());
+    let rows = f.c.rows();
+    assert_eq!(rows.len(), 1);
+    assert!(!rows[0].done && !rows[0].leaving);
+    f.c.move_selection(1);
+    assert_eq!(f.c.selected, Some(id));
+}

@@ -428,6 +428,11 @@ impl Controller {
     pub fn undo(&mut self) -> bool {
         let undone = self.store.undo();
         if undone {
+            let stale: Vec<TaskId> = self.lingering.iter().copied().filter(|id| !self.store.task(*id).is_some_and(|t| t.is_done())).collect();
+            for id in stale {
+                self.lingering.remove(&id);
+                self.leaving.remove(&id);
+            }
             self.flush();
         }
         undone
