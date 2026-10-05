@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- Source of social-preview.png (1280×640). Render: open at 1280×640 and screenshot the viewport. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ray-task social preview</title>
+<style>
+  @font-face { font-family: Inter; font-weight: 400; src: url("../../crates/app-slint/assets/fonts/Inter-Regular.ttf"); }
+  @font-face { font-family: Inter; font-weight: 600; src: url("../../crates/app-slint/assets/fonts/Inter-SemiBold.ttf"); }
+  @font-face { font-family: Inter; font-weight: 700; src: url("../../crates/app-slint/assets/fonts/Inter-Bold.ttf"); }
+  :root { --ink: #0b0d12; --muted: #4a5160; --accent: #0575fc; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; background: #fff; overflow: hidden; }
+  body {
+    font-family: Inter, sans-serif; color: var(--ink);
+    display: grid; grid-template-columns: 1fr 320px; align-items: center;
+    padding: 0 96px; gap: 64px;
+  }
+  .name { font-size: 30px; font-weight: 600; color: var(--accent); letter-spacing: -0.01em; }
+  h1 { font-size: 76px; font-weight: 700; line-height: 1.04; letter-spacing: -0.035em; margin: 18px 0 28px; }
+  p { font-size: 28px; line-height: 1.4; color: var(--muted); }
+  .url { margin-top: 36px; font-size: 22px; font-weight: 600; color: var(--ink); }
+  img { width: 320px; height: 320px; border-radius: 72px; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="name">ray-task</div>
+    <h1>5,000 tasks.<br>40 MB.<br>Zero accounts.</h1>
+    <p>Keyboard-first TODO app for your desktop.<br>Local SQLite · No subscription · Rust</p>
+    <div class="url">github.com/carvalhosauro/ray-task</div>
+  </div>
+  <img src="../../crates/app-slint/assets/icon/ray-task-512.png" alt="">
+</body>
+</html>

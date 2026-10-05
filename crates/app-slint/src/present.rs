@@ -88,9 +88,7 @@ pub fn time_label(due: Option<Due>, now: NaiveDateTime) -> (String, Tone) {
         DueStatus::TodayAt { minutes_until } if minutes_until < 0 => {
             (format!("{} · há {}", hhmm(time), relative(-minutes_until)), Tone::Late)
         }
-        DueStatus::TodayAt { minutes_until } if minutes_until <= 60 => {
-            (format!("{} · em {minutes_until} min", hhmm(time)), Tone::Soon)
-        }
+        DueStatus::TodayAt { minutes_until } if minutes_until <= 60 => (format!("{} · em {minutes_until} min", hhmm(time)), Tone::Soon),
         DueStatus::Overdue { .. } => (hhmm(time), Tone::Late),
         _ => (hhmm(time), Tone::Normal),
     }
@@ -152,8 +150,7 @@ pub fn month_title(first: NaiveDate) -> String {
 /// Grade do mês começando no domingo (como no mockup: D S T Q Q S S).
 pub fn calendar(first: NaiveDate, today: NaiveDate, selected: Option<NaiveDate>) -> Vec<CalDay> {
     let blanks = first.weekday().num_days_from_sunday();
-    let mut cells: Vec<CalDay> =
-        (0..blanks).map(|_| CalDay { day: 0, date: None, today: false, selected: false, past: false }).collect();
+    let mut cells: Vec<CalDay> = (0..blanks).map(|_| CalDay { day: 0, date: None, today: false, selected: false, past: false }).collect();
     let mut d = first;
     while d.month() == first.month() {
         cells.push(CalDay { day: d.day(), date: Some(d), today: d == today, selected: Some(d) == selected, past: d < today });

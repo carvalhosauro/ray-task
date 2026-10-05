@@ -41,10 +41,7 @@ fn roundtrip_preserves_every_field() {
     let mut conn = db::open_in_memory().unwrap();
     let mut full = task(1, Some(1));
     full.notes = "linha 1\nlinha 2".into();
-    full.due = Some(Due {
-        date: NaiveDate::from_ymd_opt(2026, 10, 5).unwrap(),
-        time: Some(NaiveTime::from_hms_opt(14, 0, 0).unwrap()),
-    });
+    full.due = Some(Due { date: NaiveDate::from_ymd_opt(2026, 10, 5).unwrap(), time: Some(NaiveTime::from_hms_opt(14, 0, 0).unwrap()) });
     full.completed_at = Some(ts("2026-10-05 15:00"));
     full.tags = vec![10];
     let inbox = task(2, None);
@@ -79,7 +76,11 @@ fn upsert_updates_existing_rows() {
 #[test]
 fn trigger_rejects_tag_from_another_project() {
     let mut conn = db::open_in_memory().unwrap();
-    db::apply_all(&mut conn, &[WriteOp::UpsertProject(project(1)), WriteOp::UpsertProject(project(2)), WriteOp::UpsertTag(tag(10, 2, "dev"))]).unwrap();
+    db::apply_all(
+        &mut conn,
+        &[WriteOp::UpsertProject(project(1)), WriteOp::UpsertProject(project(2)), WriteOp::UpsertTag(tag(10, 2, "dev"))],
+    )
+    .unwrap();
     let mut wrong = task(1, Some(1));
     wrong.tags = vec![10];
     assert!(db::apply(&mut conn, &WriteOp::UpsertTask(wrong)).is_err());
@@ -110,7 +111,12 @@ fn deleting_project_cascades_to_tasks_and_tags() {
     tagged.tags = vec![10];
     db::apply_all(
         &mut conn,
-        &[WriteOp::UpsertProject(project(1)), WriteOp::UpsertTag(tag(10, 1, "dev")), WriteOp::UpsertTask(tagged), WriteOp::UpsertTask(task(2, None))],
+        &[
+            WriteOp::UpsertProject(project(1)),
+            WriteOp::UpsertTag(tag(10, 1, "dev")),
+            WriteOp::UpsertTask(tagged),
+            WriteOp::UpsertTask(task(2, None)),
+        ],
     )
     .unwrap();
     db::apply(&mut conn, &WriteOp::DeleteProject(1)).unwrap();

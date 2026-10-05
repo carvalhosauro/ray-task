@@ -1,0 +1,22 @@
+# Install once per clone: `lefthook install`
+# Heavy checks run on pre-push only; CI runs everything again.
+pre-commit:
+  commands:
+    fmt:
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
+
+commit-msg:
+  commands:
+    conventional:
+      run: scripts/check-commit-msg.sh {1}
+
+pre-push:
+  piped: true # stop at first failure, run in order
+  commands:
+    clippy:
+      priority: 1
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    test:
+      priority: 2
+      run: cargo test --workspace

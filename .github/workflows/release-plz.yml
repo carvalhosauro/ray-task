@@ -1,0 +1,48 @@
+name: Release-plz
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    # Never on forks: they lack RELEASE_PLZ_TOKEN.
+    if: github.repository_owner == 'carvalhosauro'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          # PAT, not GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN would not
+          # trigger release.yml (dist).
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+  release-pr:
+    if: github.repository_owner == 'carvalhosauro'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

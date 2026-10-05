@@ -50,7 +50,11 @@ fn many_projects_scroll_inside_the_sidebar() {
     assert!(top >= 52.0 && bottom <= list_bottom, "Projeto 5 visível após Ctrl+9: {top}..{bottom}");
 
     // roda do mouse sobre a sidebar rola até o fim; o rodapé não se move
-    ui.window().dispatch_event(WindowEvent::PointerScrolled { position: LogicalPosition::new(100.0, 200.0), delta_x: 0.0, delta_y: -2000.0 });
+    ui.window().dispatch_event(WindowEvent::PointerScrolled {
+        position: LogicalPosition::new(100.0, 200.0),
+        delta_x: 0.0,
+        delta_y: -2000.0,
+    });
     ms(500);
     let (_, last_bottom) = span(&ui, "Projeto 19").expect("último projeto alcançável rolando");
     assert!(last_bottom <= list_bottom, "último projeto acima do rodapé: {last_bottom} <= {list_bottom}");

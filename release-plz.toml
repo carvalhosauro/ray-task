@@ -1,0 +1,18 @@
+[workspace]
+# Not on crates.io: versions come from git tags.
+git_only = true
+# dist creates the GitHub Release from the tag; avoid a duplicate.
+git_release_enable = false
+semver_check = false
+pr_labels = ["release"]
+
+[[package]]
+name = "ray-task"
+changelog_path = "CHANGELOG.md"
+changelog_include = ["ray-core"]
+git_tag_name = "v{{ version }}"
+
+[[package]]
+name = "ray-core"
+changelog_update = false
+git_tag_enable = false

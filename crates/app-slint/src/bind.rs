@@ -337,8 +337,8 @@ fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
                 log_err(c.commit_new(&title), "criar tarefa");
             });
             s.ctrl.borrow_mut().fresh = None; // só a primeira renderização cresce
-            // Captura seguida: o campo "Nova tarefa" vai na última linha, que desce a cada Enter.
-            // A lista é virtual, então rola até ela para o campo continuar existindo (e com foco).
+                                              // Captura seguida: o campo "Nova tarefa" vai na última linha, que desce a cada Enter.
+                                              // A lista é virtual, então rola até ela para o campo continuar existindo (e com foco).
             let adding = s.ctrl.borrow().adding;
             if let (true, Some(ui), Some(last)) = (adding, s.ui.upgrade(), s.tasks.row_count().checked_sub(1)) {
                 reveal_index(&ui, last);
@@ -348,9 +348,11 @@ fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         // Título vazio durante a digitação é ignorado (o Store recusa e mantém o anterior).
-        actions.on_edit(move |id, title, notes| update(&s, |c| {
-            let _ = c.edit_text(id as TaskId, &title, &notes);
-        }));
+        actions.on_edit(move |id, title, notes| {
+            update(&s, |c| {
+                let _ = c.edit_text(id as TaskId, &title, &notes);
+            })
+        });
     }
     {
         let s = s.clone();
@@ -443,9 +445,11 @@ fn wire_projects(ui: &AppWindow, s: &Rc<Shared>) {
     }
     {
         let s = s.clone();
-        actions.on_set_project_color(move |id, index| update(&s, |c| {
-            log_err(c.set_project_color(id as i64, index as usize), "cor do projeto");
-        }));
+        actions.on_set_project_color(move |id, index| {
+            update(&s, |c| {
+                log_err(c.set_project_color(id as i64, index as usize), "cor do projeto");
+            })
+        });
     }
     {
         let s = s.clone();
@@ -643,31 +647,39 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
     }
     {
         let s = s.clone();
-        picker.on_set_time(move |id, text| update(&s, |c| {
-            if log_err(c.set_time(id as TaskId, &text), "hora") == Some(false) {
-                tracing::info!(%text, "hora inválida ignorada");
-            }
-        }));
+        picker.on_set_time(move |id, text| {
+            update(&s, |c| {
+                if log_err(c.set_time(id as TaskId, &text), "hora") == Some(false) {
+                    tracing::info!(%text, "hora inválida ignorada");
+                }
+            })
+        });
     }
 
     let actions = ui.global::<Actions>();
     {
         let s = s.clone();
-        actions.on_add_tag(move |id, name| update(&s, |c| {
-            log_err(c.add_tag_by_name(id as TaskId, &name), "adicionar tag");
-        }));
+        actions.on_add_tag(move |id, name| {
+            update(&s, |c| {
+                log_err(c.add_tag_by_name(id as TaskId, &name), "adicionar tag");
+            })
+        });
     }
     {
         let s = s.clone();
-        actions.on_remove_tag(move |id, tag| update(&s, |c| {
-            log_err(c.remove_tag(id as TaskId, tag as i64), "remover tag");
-        }));
+        actions.on_remove_tag(move |id, tag| {
+            update(&s, |c| {
+                log_err(c.remove_tag(id as TaskId, tag as i64), "remover tag");
+            })
+        });
     }
     {
         let s = s.clone();
-        actions.on_remove_last_tag(move |id| update(&s, |c| {
-            log_err(c.remove_last_tag(id as TaskId), "remover última tag");
-        }));
+        actions.on_remove_last_tag(move |id| {
+            update(&s, |c| {
+                log_err(c.remove_last_tag(id as TaskId), "remover última tag");
+            })
+        });
     }
     {
         let s = s.clone();
