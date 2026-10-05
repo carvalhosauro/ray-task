@@ -74,6 +74,8 @@ pub struct Controller {
     lingering: HashSet<TaskId>,
     leaving: HashSet<TaskId>,
     pulsing: HashSet<TaskId>,
+    /// Tarefas apagadas nesta sessão: o desfazer que as restaura volta a selecioná-las.
+    deleted: HashSet<TaskId>,
 }
 
 impl Controller {
@@ -95,13 +97,46 @@ impl Controller {
             lingering: HashSet::new(),
             leaving: HashSet::new(),
             pulsing: HashSet::new(),
+            deleted: HashSet::new(),
         }
     }
 
+    /// Envia as gravações pendentes e solta o foco de tarefas que saíram da visão.
     fn flush(&mut self) {
         let ops = self.store.take_ops();
         if !ops.is_empty() {
             (self.persist)(ops);
+        }
+        self.drop_stale_focus();
+    }
+
+    /// Tarefa aparece na visão atual (o filtro de texto não conta: editar o título não fecha a tarefa).
+    fn in_view(&self, id: TaskId) -> bool {
+        let Some(task) = self.store.task(id) else { return false };
+        if self.lingering.contains(&id) || self.leaving.contains(&id) {
+            return true;
+        }
+        let today = self.store.today();
+        match self.view {
+            _ if task.is_done() => self.show_done && matches!(self.view, View::Project(p) if task.project_id == Some(p)),
+            View::Today => task.due.is_some_and(|d| d.date <= today),
+            View::Upcoming => task.due.is_some_and(|d| d.date > today),
+            View::Inbox => task.project_id.is_none(),
+            View::Project(p) => task.project_id == Some(p),
+        }
+    }
+
+    /// Depois de uma mudança, `expanded`/`selected`/`popover_task` não podem apontar para uma
+    /// tarefa invisível (o teclado agiria nela: Delete, Ctrl+Enter, Ctrl+D…).
+    fn drop_stale_focus(&mut self) {
+        if self.expanded.is_some_and(|id| !self.in_view(id)) {
+            self.expanded = None;
+        }
+        if self.selected.is_some_and(|id| !self.in_view(id)) {
+            self.selected = None;
+        }
+        if self.popover_task.is_some_and(|id| !self.in_view(id)) {
+            self.popover_task = None;
         }
     }
 
@@ -421,6 +456,7 @@ impl Controller {
     pub fn finish_delete(&mut self, id: TaskId) -> Result<(), DomainError> {
         self.finish_leaving(id);
         self.store.delete_task(id)?;
+        self.deleted.insert(id);
         self.flush();
         Ok(())
     }
@@ -432,6 +468,12 @@ impl Controller {
             for id in stale {
                 self.lingering.remove(&id);
                 self.leaving.remove(&id);
+            }
+            // Tarefa apagada que voltou: fica selecionada para o teclado continuar dela.
+            let restored = self.deleted.iter().copied().find(|id| self.store.task(*id).is_some());
+            if let Some(id) = restored {
+                self.deleted.remove(&id);
+                self.selected = Some(id);
             }
             self.flush();
         }
@@ -568,6 +610,7 @@ impl Controller {
     /// Chamado a cada minuto. Retorna as tarefas cuja hora chegou desde `previous` (para o pulso).
     pub fn tick(&mut self, previous: NaiveDateTime) -> Vec<TaskId> {
         let now = self.store.now();
+        self.drop_stale_focus(); // a virada do dia tira tarefas de Próximos
         if previous.date() != now.date() {
             return Vec::new();
         }

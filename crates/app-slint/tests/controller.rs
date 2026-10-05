@@ -310,3 +310,62 @@ fn undo_after_leaving_started_clears_animation_state() {
     f.c.move_selection(1);
     assert_eq!(f.c.selected, Some(id));
 }
+
+// ---------- foco obsoleto (I4) e seleção após desfazer ----------
+
+#[test]
+fn moving_a_task_out_of_the_view_clears_focus() {
+    let mut f = at("2026-10-05 13:35");
+    let p = f.c.store.create_project("Casa").unwrap();
+    f.c.select_view(View::Inbox);
+    let id = f.c.commit_new("Comprar pão").unwrap();
+    f.c.toggle_expand(id);
+    assert_eq!((f.c.expanded, f.c.selected), (Some(id), Some(id)));
+    f.c.move_task(id, Some(p)).unwrap();
+    assert_eq!((f.c.expanded, f.c.selected, f.c.focused_task()), (None, None, None));
+}
+
+#[test]
+fn clearing_the_date_in_today_clears_focus_and_popover() {
+    let mut f = at("2026-10-05 13:35");
+    let keep = f.c.commit_new("Fica").unwrap();
+    let id = f.c.commit_new("Sai").unwrap();
+    f.c.open_popover(id);
+    assert_eq!(f.c.popover_task, Some(id));
+    f.c.quick_date(id, QuickDate::Clear).unwrap();
+    assert_eq!((f.c.expanded, f.c.selected, f.c.popover_task), (None, None, None));
+
+    // continua na visão: o foco fica
+    f.c.toggle_expand(keep);
+    f.c.quick_date(keep, QuickDate::Today).unwrap();
+    assert_eq!((f.c.expanded, f.c.selected), (Some(keep), Some(keep)));
+}
+
+#[test]
+fn deleting_the_project_of_a_focused_task_clears_focus() {
+    let mut f = at("2026-10-05 13:35");
+    let p = f.c.store.create_project("Casa").unwrap();
+    let id = f.c.store.create_task(View::Project(p), "Limpar garagem").unwrap();
+    f.c.store.set_due(id, Some(ray_core::Due { date: d("2026-10-05"), time: None })).unwrap();
+    assert_eq!(f.c.rows().len(), 1, "aparece em Hoje");
+    f.c.move_selection(1);
+    assert_eq!(f.c.selected, Some(id));
+    f.c.delete_project(p).unwrap();
+    assert_eq!((f.c.selected, f.c.focused_task()), (None, None));
+}
+
+#[test]
+fn undoing_a_delete_selects_the_restored_task() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.commit_new("a").unwrap();
+    let b = f.c.commit_new("b").unwrap();
+    f.c.commit_new("c").unwrap();
+    f.c.move_selection(1);
+    f.c.move_selection(1);
+    assert_eq!(f.c.selected, Some(b));
+    assert!(f.c.begin_delete(b));
+    f.c.finish_delete(b).unwrap();
+    assert_eq!(f.c.selected, None);
+    assert!(f.c.undo());
+    assert_eq!(f.c.selected, Some(b), "a tarefa restaurada volta selecionada");
+}
