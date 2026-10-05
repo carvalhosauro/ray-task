@@ -39,7 +39,7 @@ ray-task keeps the list in one SQLite file on your disk and opens before you rea
 
 ## The numbers
 
-Measured with **5,000 tasks** in the database:
+Measured with **5,000 tasks** in the database (RAM measured on Linux with the default software renderer):
 
 | RAM | Switching views | Cold start (open + load) |
 |:---:|:---:|:---:|
