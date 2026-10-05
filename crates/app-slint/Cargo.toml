@@ -5,6 +5,9 @@ version.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+repository.workspace = true
+authors = ["Gustavo Carvalho"]
+description = "Keyboard-first TODO app for the desktop. Local SQLite, no account."
 
 [dependencies]
 ray-core = { path = "../core" }
@@ -21,3 +24,12 @@ slint-build = "1.18"
 [dev-dependencies]
 tempfile.workspace = true
 i-slint-backend-testing = "1.18"
+
+[package.metadata.dist]
+dist = true
+
+[package.metadata.wix]
+upgrade-guid = "66EB467D-86A3-47D8-BF88-5E0438098512"
+path-guid = "C65FF48A-67B1-483E-A0F1-B675430036ED"
+license = false
+eula = false

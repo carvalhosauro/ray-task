@@ -7,6 +7,7 @@ edition = "2021"
 version = "0.1.0"
 rust-version = "1.92"
 license = "MIT"
+repository = "https://github.com/carvalhosauro/ray-task"
 
 [workspace.dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
@@ -19,3 +20,8 @@ tempfile = "3.27"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
