@@ -129,7 +129,9 @@ fn sync_rows(model: &VecModel<TaskItem>, rows: Vec<TaskItem>) {
                 for _ in i..j {
                     model.remove(i);
                 }
-                model.set_row_data(i, row);
+                if model.row_data(i).as_ref() != Some(&row) {
+                    model.set_row_data(i, row);
+                }
             }
             None => model.insert(i, row),
         }
@@ -182,6 +184,9 @@ pub(crate) fn refresh(s: &Shared) {
 
 pub(crate) fn show_toast(s: &Shared, text: &str, action: &str, kind: i32) {
     let Some(ui) = s.ui.upgrade() else { return };
+    if kind == TOAST_UNDO && ui.get_toast_visible() && ui.get_toast_kind() == TOAST_RETRY {
+        return; // a falha de gravação tem prioridade até resolver
+    }
     ui.set_toast_text(text.into());
     ui.set_toast_action(action.into());
     ui.set_toast_kind(kind);
@@ -192,14 +197,15 @@ pub(crate) fn show_toast(s: &Shared, text: &str, action: &str, kind: i32) {
     }
     let weak = s.ui.clone();
     s.toast_timer.start(TimerMode::SingleShot, Duration::from_secs(5), move || {
-        if let Some(ui) = weak.upgrade() {
+        if let Some(ui) = weak.upgrade().filter(|ui| ui.get_toast_kind() == TOAST_UNDO) {
             ui.set_toast_visible(false);
         }
     });
 }
 
-fn hide_toast(s: &Shared) {
-    if let Some(ui) = s.ui.upgrade() {
+/// Esconde só o toast de desfazer; o de falha de gravação fica até resolver.
+fn hide_undo_toast(s: &Shared) {
+    if let Some(ui) = s.ui.upgrade().filter(|ui| ui.get_toast_kind() == TOAST_UNDO) {
         ui.set_toast_visible(false);
     }
 }
@@ -318,7 +324,7 @@ fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_undo(move || {
-            hide_toast(&s);
+            hide_undo_toast(&s);
             update(&s, |c| {
                 c.undo();
             });
