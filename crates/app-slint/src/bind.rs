@@ -13,7 +13,6 @@ pub const TOAST_UNDO: i32 = 0;
 pub const TOAST_RETRY: i32 = 1;
 
 /// Ação aguardando resposta de um diálogo (Task 12).
-#[allow(dead_code)] // used in Task 12–14
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Pending {
     NewProject,
@@ -21,6 +20,7 @@ pub(crate) enum Pending {
     RenameTag(ray_core::TagId),
     DeleteProject(ray_core::ProjectId),
     DeleteTag(ray_core::TagId),
+    #[allow(dead_code)] // constructed in Task 13
     MoveTask(TaskId, Option<ray_core::ProjectId>),
 }
 
@@ -28,7 +28,6 @@ pub(crate) struct Shared {
     pub(crate) ui: slint::Weak<AppWindow>,
     pub(crate) ctrl: RefCell<Controller>,
     tasks: Rc<VecModel<TaskItem>>,
-    #[allow(dead_code)] // used in Task 12–14
     pub(crate) pending: RefCell<Option<Pending>>,
     toast_timer: Timer,
     pub(crate) retry: Box<dyn Fn()>,
@@ -57,6 +56,7 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
         retry,
     });
     wire_tasks(ui, &shared);
+    wire_projects(ui, &shared);
     let timers = Vec::new();
     refresh(&shared);
     Binding { shared, _timers: timers }
@@ -341,5 +341,160 @@ fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_toggle_show_done(move || update(&s, |c| c.toggle_show_done()));
+    }
+}
+
+#[allow(dead_code)] // used in Task 14 (Esc)
+#[allow(dead_code)] // used in Task 14 (Esc)
+pub(crate) fn dialog_open(s: &Shared) -> bool {
+    s.pending.borrow().is_some()
+}
+
+fn open_prompt(s: &Shared, title: &str, text: &str, pending: Pending) {
+    let Some(ui) = s.ui.upgrade() else { return };
+    *s.pending.borrow_mut() = Some(pending);
+    ui.set_confirm_visible(false);
+    ui.set_prompt_title(title.into());
+    ui.set_prompt_text(text.into());
+    ui.set_prompt_error("".into());
+    ui.set_prompt_visible(true);
+}
+
+pub(crate) fn open_confirm(s: &Shared, title: &str, message: &str, button: &str, pending: Pending) {
+    let Some(ui) = s.ui.upgrade() else { return };
+    *s.pending.borrow_mut() = Some(pending);
+    ui.set_prompt_visible(false);
+    ui.set_confirm_title(title.into());
+    ui.set_confirm_message(message.into());
+    ui.set_confirm_button(button.into());
+    ui.set_confirm_visible(true);
+}
+
+pub(crate) fn close_dialogs(s: &Shared) {
+    *s.pending.borrow_mut() = None;
+    if let Some(ui) = s.ui.upgrade() {
+        ui.set_prompt_visible(false);
+        ui.set_confirm_visible(false);
+        ui.invoke_focus_root();
+    }
+}
+
+fn tasks_phrase(n: usize) -> String {
+    match n {
+        0 => "O projeto está vazio.".into(),
+        1 => "1 tarefa será apagada junto. Isso não pode ser desfeito.".into(),
+        n => format!("{n} tarefas serão apagadas junto. Isso não pode ser desfeito."),
+    }
+}
+
+fn wire_projects(ui: &AppWindow, s: &Rc<Shared>) {
+    let actions = ui.global::<Actions>();
+    {
+        let s = s.clone();
+        actions.on_new_project(move || open_prompt(&s, "Novo projeto", "", Pending::NewProject));
+    }
+    {
+        let s = s.clone();
+        actions.on_begin_rename_project(move |id| {
+            let name = s.ctrl.borrow().store.project(id as i64).map(|p| p.name.clone());
+            if let Some(name) = name {
+                open_prompt(&s, "Renomear projeto", &name, Pending::RenameProject(id as i64));
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_set_project_color(move |id, index| update(&s, |c| {
+            log_err(c.set_project_color(id as i64, index as usize), "cor do projeto");
+        }));
+    }
+    {
+        let s = s.clone();
+        actions.on_request_delete_project(move |id| {
+            let info = {
+                let c = s.ctrl.borrow();
+                c.store.project(id as i64).map(|p| (p.name.clone(), c.project_task_count(id as i64)))
+            };
+            if let Some((name, count)) = info {
+                open_confirm(&s, &format!("Apagar “{name}”?"), &tasks_phrase(count), "Apagar", Pending::DeleteProject(id as i64));
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_begin_rename_tag(move |id| {
+            let name = s.ctrl.borrow().store.tag(id as i64).map(|t| t.name.clone());
+            if let Some(name) = name {
+                open_prompt(&s, "Renomear tag", &name, Pending::RenameTag(id as i64));
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_request_delete_tag(move |id| {
+            let name = s.ctrl.borrow().store.tag(id as i64).map(|t| t.name.clone());
+            if let Some(name) = name {
+                open_confirm(
+                    &s,
+                    &format!("Apagar a tag “{name}”?"),
+                    "Ela será removida de todas as tarefas do projeto.",
+                    "Apagar",
+                    Pending::DeleteTag(id as i64),
+                );
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_prompt_accept(move |text| {
+            let Some(pending) = *s.pending.borrow() else { return };
+            let result = {
+                let mut c = s.ctrl.borrow_mut();
+                match pending {
+                    Pending::NewProject => c.create_project(&text).map(|_| ()),
+                    Pending::RenameProject(id) => c.rename_project(id, &text),
+                    Pending::RenameTag(id) => c.rename_tag(id, &text),
+                    _ => return,
+                }
+            };
+            match result {
+                Ok(()) => {
+                    close_dialogs(&s);
+                    refresh(&s);
+                }
+                Err(error) => {
+                    if let Some(ui) = s.ui.upgrade() {
+                        ui.set_prompt_error(error.to_string().into());
+                    }
+                }
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_confirm_accept(move || {
+            let Some(pending) = s.pending.borrow_mut().take() else { return };
+            {
+                let mut c = s.ctrl.borrow_mut();
+                match pending {
+                    Pending::DeleteProject(id) => {
+                        log_err(c.delete_project(id), "apagar projeto");
+                    }
+                    Pending::DeleteTag(id) => {
+                        log_err(c.delete_tag(id), "apagar tag");
+                    }
+                    Pending::MoveTask(task, to) => {
+                        log_err(c.move_task(task, to), "mover tarefa");
+                    }
+                    _ => {}
+                }
+            }
+            close_dialogs(&s);
+            refresh(&s);
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_dialog_cancel(move || close_dialogs(&s));
     }
 }
