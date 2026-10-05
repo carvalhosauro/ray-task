@@ -224,15 +224,38 @@ component TaskDetails inherits Rectangle {
     property <int> open-req: Picker.request;
     property <int> close-req: Picker.close-request;
     property <int> tag-req: Actions.focus-tag-request;
+    function show-date-popup() {
+        Picker.handled-request = Picker.request;
+        date-popup.show();
+    }
+    function grab-tag-input() {
+        Actions.focus-tag-handled = Actions.focus-tag-request;
+        if (root.item.has-project) {
+            tag-input.grab();
+        }
+    }
     changed open-req => {
         if (Picker.open-for == root.item.id) {
-            date-popup.show();
+            root.show-date-popup();
         }
     }
     changed close-req => { date-popup.close(); }
     changed tag-req => {
-        if (Actions.focus-tag-task == root.item.id && root.item.has-project) {
-            tag-input.grab();
+        if (Actions.focus-tag-task == root.item.id) {
+            root.grab-tag-input();
+        }
+    }
+
+    // Lista virtual: com Ctrl+D / Ctrl+T numa linha fora da tela, os detalhes podem nascer
+    // depois do pedido. Atende o pedido pendente quando já houver layout (próximo tick).
+    property <bool> pending-date: Picker.open-for == root.item.id && Picker.handled-request != Picker.request;
+    property <bool> pending-tag: Actions.focus-tag-task == root.item.id && Actions.focus-tag-handled != Actions.focus-tag-request;
+    Timer {
+        interval: 16ms;
+        running: root.pending-date || root.pending-tag;
+        triggered => {
+            if (root.pending-date) { root.show-date-popup(); }
+            if (root.pending-tag) { root.grab-tag-input(); }
         }
     }
 

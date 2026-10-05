@@ -530,6 +530,17 @@ fn close_picker(s: &Shared) {
     }
 }
 
+/// Pede à lista que role até a tarefa. A lista é virtual (a linha pode nem existir ainda):
+/// o Slint estima a posição e depois corrige pelo layout real.
+fn reveal(s: &Shared, id: TaskId) {
+    let Some(ui) = s.ui.upgrade() else { return };
+    let Some(index) = (0..s.tasks.row_count()).find(|&i| s.tasks.row_data(i).is_some_and(|r| r.id as TaskId == id)) else {
+        return;
+    };
+    ui.set_reveal_index(index as i32);
+    ui.set_reveal_request(ui.get_reveal_request() + 1);
+}
+
 pub(crate) fn focus_tag_input(s: &Shared, id: TaskId) {
     if let Some(ui) = s.ui.upgrade() {
         let actions = ui.global::<Actions>();
@@ -648,7 +659,13 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     }
     {
         let s = s.clone();
-        actions.on_move_selection(move |delta| update(&s, |c| c.move_selection(delta)));
+        actions.on_move_selection(move |delta| {
+            update(&s, |c| c.move_selection(delta));
+            let selected = s.ctrl.borrow().selected;
+            if let Some(id) = selected {
+                reveal(&s, id);
+            }
+        });
     }
     {
         let s = s.clone();
@@ -678,11 +695,13 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     }
     {
         let s = s.clone();
-        // Ctrl+D: abre a tarefa e, no frame seguinte (quando os detalhes já existem), o popover.
+        // Ctrl+D: abre a tarefa, rola até ela e, no frame seguinte, pede o popover
+        // (se os detalhes nascerem depois, eles atendem o pedido pendente).
         actions.on_date_selected(move || {
             let target = s.ctrl.borrow().focused_task();
             let Some(id) = target else { return };
             update(&s, |c| c.expanded = Some(id));
+            reveal(&s, id);
             let s1 = s.clone();
             Timer::single_shot(Duration::from_millis(16), move || open_picker(&s1, id));
         });
@@ -693,6 +712,7 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
             let target = s.ctrl.borrow().focused_task();
             let Some(id) = target else { return };
             update(&s, |c| c.expanded = Some(id));
+            reveal(&s, id);
             let s1 = s.clone();
             Timer::single_shot(Duration::from_millis(16), move || focus_tag_input(&s1, id));
         });

@@ -21,6 +21,8 @@ export global Actions {
     in property <[ProjectChoice]> move-targets;
     in-out property <int> focus-tag-request: 0;
     in-out property <int> focus-tag-task: -1;
+    // último focus-tag-request atendido (detalhes criados depois do pedido ainda o atendem)
+    in-out property <int> focus-tag-handled: 0;
     // teclado e filtro
     callback escape();
     callback move-selection(int);
@@ -52,6 +54,8 @@ export global Picker {
     in-out property <int> open-for: -1;
     in-out property <int> request: 0;
     in-out property <int> close-request: 0;
+    // último request atendido (detalhes criados depois do pedido ainda o atendem)
+    in-out property <int> handled-request: 0;
     callback open(int);
     callback shift-month(int);
     callback pick(int, string);

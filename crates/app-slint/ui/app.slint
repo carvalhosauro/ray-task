@@ -87,13 +87,54 @@ component ListFooter inherits VerticalLayout {
     }
 }
 
-/// Flickable virtualizado, sem barra de rolagem (igual ao Flickable de antes).
+/// Flickable virtualizado, sem barra de rolagem (igual ao Flickable de antes; mesmo formato
+/// do ListView do std-widgets, sem a ScrollBar).
 /// O compilador do Slint trata um `for` filho direto de um elemento chamado `ListView`
 /// que tenha content-y/-height/-width e visible-height/-width como lista virtual:
 /// só instancia as linhas que cabem na área visível.
-component ListView inherits Flickable {
-    out property <length> visible-width: self.width;
-    out property <length> visible-height: self.height;
+component ListView {
+    in-out property <length> content-y <=> flick.content-y;
+    in-out property <length> content-height <=> flick.content-height;
+    in-out property <length> content-width <=> flick.content-width;
+    out property <length> visible-width <=> flick.width;
+    out property <length> visible-height <=> flick.height;
+
+    // Rolagem até uma linha (teclado). As alturas variam e só as linhas visíveis existem,
+    // então é em dois passos: `reveal` estima a posição (altura média, a mesma que a lista
+    // virtual usa) e faz a linha ser criada; depois a própria linha corrige pelo `y` real
+    // a cada `fine-request` (ver `for` em AppWindow).
+    out property <int> fine-request;
+    property <int> fine-ticks;
+    public function reveal(index: int, count: int) {
+        if (index < 0 || count <= 0) { return; }
+        let avg = root.content-height / count;
+        let top = index * avg + root.content-y;
+        if (top < 0px) {
+            root.content-y = min(0px, root.content-y - top);
+        } else if (top + avg > root.visible-height) {
+            root.content-y -= top + avg - root.visible-height;
+        }
+        // ~240 ms de correções: cobre a animação de abrir (200 ms) no Ctrl+D / Ctrl+T.
+        root.fine-ticks = 15;
+    }
+    public function fit(top: length, height: length) {
+        if (top < 0px) {
+            root.content-y = min(0px, root.content-y - top);
+        } else if (top + height > root.visible-height) {
+            root.content-y -= min(top, top + height - root.visible-height);
+        }
+    }
+    Timer {
+        interval: 16ms;
+        running: root.fine-ticks > 0;
+        triggered => {
+            root.fine-request += 1;
+            root.fine-ticks -= 1;
+        }
+    }
+    flick := Flickable {
+        @children
+    }
 }
 
 component FilterField inherits Rectangle {
@@ -142,6 +183,9 @@ export component AppWindow inherits Window {
     in property <[TaskItem]> tasks;
     in property <int> expanded-id: -1;
     in property <int> selected-id: -1;
+    // Linha que o teclado quer ver (↑/↓, Ctrl+D, Ctrl+T); cada pedido incrementa reveal-request.
+    in property <int> reveal-index: -1;
+    in property <int> reveal-request;
     in property <bool> adding;
     in property <string> empty-text;
     in property <string> done-toggle-label;
@@ -250,10 +294,19 @@ export component AppWindow inherits Window {
                                     self.content-y = -self.content-height;
                                 }
                             }
+                            property <int> reveal-request: root.reveal-request;
+                            changed reveal-request => { self.reveal(root.reveal-index, root.tasks.length); }
                             // Só as linhas visíveis existem; o rodapé vai junto da última linha.
                             for item[i] in root.tasks : VerticalLayout {
                                 padding-left: 20px;
                                 padding-right: 20px;
+                                // Linha alvo do teclado: garante que está inteira na tela (y real).
+                                property <int> fine: task-list.fine-request;
+                                changed fine => {
+                                    if (i == root.reveal-index) {
+                                        task-list.fit(self.y + task-list.content-y, self.height);
+                                    }
+                                }
                                 TaskRow {
                                     item: item;
                                     expanded: item.id == root.expanded-id;
