@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ray-task
+Comment=Tarefas leves e fluidas
+Exec=ray-task
+Icon=ray-task
+Terminal=false
+Categories=Office;ProjectManagement;
+StartupWMClass=ray-task
