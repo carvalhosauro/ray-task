@@ -224,6 +224,13 @@ export component AppWindow inherits Window {
                 if (event.text == "1") { Actions.select-nav(0); return accept; }
                 if (event.text == "2") { Actions.select-nav(1); return accept; }
                 if (event.text == "3") { Actions.select-nav(2); return accept; }
+                // Ctrl+4..9: projetos na ordem da sidebar (índices 3..8 em `nav`).
+                if (event.text == "4") { Actions.select-nav(3); return accept; }
+                if (event.text == "5") { Actions.select-nav(4); return accept; }
+                if (event.text == "6") { Actions.select-nav(5); return accept; }
+                if (event.text == "7") { Actions.select-nav(6); return accept; }
+                if (event.text == "8") { Actions.select-nav(7); return accept; }
+                if (event.text == "9") { Actions.select-nav(8); return accept; }
                 return reject;
             }
             if (event.text == Key.UpArrow) { Actions.move-selection(-1); return accept; }

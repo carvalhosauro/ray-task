@@ -43,11 +43,12 @@ install -Dm644 packaging/ray-task.desktop ~/.local/share/applications/ray-task.d
 | `↑` / `↓` | Navegar entre tarefas |
 | `Enter` / `Esc` | Abrir / fechar |
 | `Ctrl+Enter` | Concluir / desmarcar |
-| `Ctrl+D` | Data |
-| `Ctrl+T` | Tag |
+| `Ctrl+D` | Data (no popover: `H` Hoje, `A` Amanhã, `S` Próxima semana, `Delete` Sem data, ou digite a hora) |
+| `Ctrl+T` | Tag (`Enter` usa o texto digitado, `Tab` aceita a sugestão) |
 | `Delete` | Apagar (com Desfazer) |
 | `Ctrl+Z` | Desfazer |
 | `Ctrl+1` / `2` / `3` | Hoje / Próximos / Entrada |
+| `Ctrl+4` … `Ctrl+9` | Projetos, na ordem da barra lateral |
 | `Ctrl+F` | Filtrar a visão atual |
 
 Clique direito num projeto: renomear, cor, apagar. Clique numa tag aberta: remover, renomear, apagar.

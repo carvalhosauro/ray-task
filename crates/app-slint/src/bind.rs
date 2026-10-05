@@ -201,6 +201,11 @@ pub(crate) fn refresh(s: &Shared) {
             .collect::<Vec<_>>(),
     )));
     picker.set_time_text(c.popover_time().into());
+    // A tarefa do popover saiu da visão (o Controller soltou o foco): fecha o popover também.
+    if c.popover_task.is_none() && picker.get_open_for() != -1 {
+        picker.set_open_for(-1);
+        picker.set_close_request(picker.get_close_request() + 1);
+    }
     picker.set_next_week_hint(c.next_week_hint().into());
 }
 
@@ -548,6 +553,8 @@ fn close_picker(s: &Shared) {
         let picker = ui.global::<Picker>();
         picker.set_open_for(-1);
         picker.set_close_request(picker.get_close_request() + 1);
+        // O foco estava no campo de hora do popover: volta para os atalhos globais.
+        ui.invoke_focus_root();
     }
 }
 
@@ -571,6 +578,15 @@ pub(crate) fn focus_tag_input(s: &Shared, id: TaskId) {
         let actions = ui.global::<Actions>();
         actions.set_focus_tag_task(id as i32);
         actions.set_focus_tag_request(actions.get_focus_tag_request() + 1);
+    }
+}
+
+/// Foco no título da tarefa aberta (atendido pelo próprio campo quando ele existir).
+fn focus_title(s: &Shared, id: TaskId) {
+    if let Some(ui) = s.ui.upgrade() {
+        let actions = ui.global::<Actions>();
+        actions.set_focus_title_task(id as i32);
+        actions.set_focus_title_request(actions.get_focus_title_request() + 1);
     }
 }
 
@@ -694,11 +710,17 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     }
     {
         let s = s.clone();
-        actions.on_expand_selected(move || update(&s, |c| {
-            if let Some(id) = c.selected {
-                c.toggle_expand(id);
+        actions.on_expand_selected(move || {
+            update(&s, |c| {
+                if let Some(id) = c.selected {
+                    c.toggle_expand(id);
+                }
+            });
+            let expanded = s.ctrl.borrow().expanded;
+            if let Some(id) = expanded {
+                focus_title(&s, id);
             }
-        }));
+        });
     }
     {
         let s = s.clone();

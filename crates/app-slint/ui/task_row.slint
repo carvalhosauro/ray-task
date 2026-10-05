@@ -29,9 +29,15 @@ component QuickOption inherits Rectangle {
 }
 
 /// Conteúdo do popover de data (atalhos, mini-calendário, hora).
+/// Teclado: abre com o foco no campo de hora; H = Hoje, A = Amanhã, S = Próxima semana,
+/// Delete (ou Backspace com o campo vazio) = Sem data, Esc fecha.
 component DatePopover inherits MenuPanel {
     in property <int> task-id;
     width: 264px;
+    init => {
+        time-input.focus();
+        time-input.select-all();
+    }
     VerticalLayout {
         padding: 6px;
         QuickOption { icon: @image-url("icons/sun.svg"); tint: #FF9F0A; text: "Hoje"; clicked => { Picker.quick(root.task-id, 0); } }
@@ -119,6 +125,18 @@ component DatePopover inherits MenuPanel {
                     vertical-alignment: center;
                     single-line: true;
                     accepted => { Picker.set-time(root.task-id, self.text); }
+                    key-pressed(event) => {
+                        if (event.modifiers.control || event.modifiers.alt || event.modifiers.meta) { return reject; }
+                        if (event.text == "h" || event.text == "H") { Picker.quick(root.task-id, 0); return accept; }
+                        if (event.text == "a" || event.text == "A") { Picker.quick(root.task-id, 1); return accept; }
+                        if (event.text == "s" || event.text == "S") { Picker.quick(root.task-id, 2); return accept; }
+                        if (event.text == Key.Delete || (event.text == Key.Backspace && self.text == "")) {
+                            Picker.quick(root.task-id, 3);
+                            return accept;
+                        }
+                        if (event.text == Key.Escape) { Actions.escape(); return accept; }
+                        return reject;
+                    }
                 }
                 if time-input.text == "" && !time-input.has-focus : Text {
                     x: 8px;
@@ -160,7 +178,8 @@ component TagPill inherits Pill {
     }
 }
 
-/// Campo "+ Tag" com sugestão em cinza (Tab ou Enter aceitam a sugestão).
+/// Campo "+ Tag" com sugestão em cinza: Tab completa com a sugestão; Enter usa o texto
+/// digitado (cria a tag ou reaproveita a de mesmo nome, sem diferença de caixa).
 component TagInput inherits Rectangle {
     in property <int> task-id;
     // Sempre existe (para o Ctrl+T conseguir focar); some na Entrada, que não tem tags.
@@ -186,7 +205,8 @@ component TagInput inherits Rectangle {
             Text {
                 x: 0px;
                 width: parent.width;
-                text: input.text == "" && !input.has-focus ? "Tag" : root.suggestion;
+                // Sugestão só aparece se completa o texto (o resto em cinza depois do digitado).
+                text: input.text == "" && !input.has-focus ? "Tag" : root.suggestion.to-lowercase() == input.text.to-lowercase() ? "" : root.suggestion;
                 font-size: 13px;
                 color: Theme.faint;
                 vertical-alignment: center;
@@ -199,7 +219,7 @@ component TagInput inherits Rectangle {
                 single-line: true;
                 accessible-label: "Adicionar tag";
                 accepted => {
-                    Actions.add-tag(root.task-id, root.suggestion != "" ? root.suggestion : self.text);
+                    Actions.add-tag(root.task-id, self.text);
                     self.text = "";
                 }
                 key-pressed(event) => {
@@ -416,6 +436,17 @@ export component TaskRow inherits Rectangle {
                                 TouchArea { clicked => { Actions.expand(root.item.id); } }
                             }
                             if root.expanded : TextInput {
+                                // Aberta pelo teclado (Enter): o título recebe o foco. A linha pode
+                                // nascer depois do pedido (lista virtual), por isso init + changed.
+                                property <int> focus-req: Actions.focus-title-request;
+                                function take-focus() {
+                                    if (Actions.focus-title-task == root.item.id && Actions.focus-title-handled != Actions.focus-title-request) {
+                                        Actions.focus-title-handled = Actions.focus-title-request;
+                                        self.focus();
+                                    }
+                                }
+                                init => { self.take-focus(); }
+                                changed focus-req => { self.take-focus(); }
                                 text: root.item.title;
                                 font-size: 15px;
                                 font-weight: 600;

@@ -23,6 +23,10 @@ export global Actions {
     in-out property <int> focus-tag-task: -1;
     // último focus-tag-request atendido (detalhes criados depois do pedido ainda o atendem)
     in-out property <int> focus-tag-handled: 0;
+    // Enter/expand-selected pede foco no título da tarefa aberta (mesmo esquema do focus-tag-*)
+    in-out property <int> focus-title-request: 0;
+    in-out property <int> focus-title-task: -1;
+    in-out property <int> focus-title-handled: 0;
     // teclado e filtro
     callback escape();
     callback move-selection(int);

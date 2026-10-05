@@ -118,7 +118,17 @@ export component Sidebar inherits Rectangle {
         }
     }
 
-    Flickable {
+    // Lista rolável entre a busca e "Novo projeto" (recorta o que passa da área).
+    // Seleção pelo teclado (Ctrl+1..9) fora da área: rola até a linha ficar inteira.
+    changed selected => {
+        let top = root.row-y(root.selected);
+        if (top + list.content-y < 0px) {
+            list.content-y = min(0px, 4px - top);
+        } else if (top + 32px + list.content-y > list.height) {
+            list.content-y = list.height - top - 32px - 4px;
+        }
+    }
+    list := Flickable {
         y: 52px;
         height: parent.height - 52px - 48px;
         content-height: root.row-y(root.nav.length) + 12px;
