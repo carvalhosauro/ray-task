@@ -110,7 +110,7 @@ Download and extract the archive for your architecture from the releases page, t
 ./install-desktop.sh
 ```
 
-The installer places the binary in `~/.cargo/bin`; make sure that directory is on your `PATH`.
+It copies `ray-task` to `~/.local/bin` and adds the menu entry and icons. No root needed.
 </details>
 
 <details>
