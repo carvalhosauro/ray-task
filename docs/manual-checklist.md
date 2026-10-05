@@ -29,15 +29,13 @@ Compare lado a lado com `docs/superpowers/mockups/2026-10-05-ui-preview.html`.
 
 Medido em 2026-10-05, build release, Fedora 43 / Wayland (KWin).
 
-- [x] Abertura < 200 ms: `grep pronto ~/.local/state/ray-task/ray-task.log | tail -1` → 34 ms (banco real), 79 ms (backend padrão, 5.000 tarefas), 51 ms (`winit-femtovg`, 5.000 tarefas)
-- [ ] RAM < 40 MB com 5.000 tarefas: **FALHOU**. Popule um banco temporário com `cargo run -p ray-core --release --example seed -- <caminho.db>` (use `XDG_DATA_HOME`/`XDG_STATE_HOME`/`XDG_RUNTIME_DIR` temporários, com symlink do socket `wayland-0` no runtime dir) e meça com `/usr/bin/time -v target/release/ray-task` → "Maximum resident set size":
+- [x] Abertura < 200 ms: `grep pronto ~/.local/state/ray-task/ray-task.log | tail -1` → 34 ms (banco real); 5.000 tarefas: 37–38 ms (padrão, software), 39 ms (`winit-femtovg`)
+- [x] RAM < 40 MB com 5.000 tarefas (backend padrão = `winit-software`, lista virtualizada): popule um banco temporário com `cargo run -p ray-core --release --example seed -- <caminho.db>` (use `XDG_DATA_HOME`/`XDG_STATE_HOME`/`XDG_RUNTIME_DIR` temporários e `WAYLAND_DISPLAY=/run/user/1000/wayland-0`) e meça com `/usr/bin/time -v target/release/ray-task` → "Maximum resident set size":
 
   | Backend | Banco vazio | 5.000 tarefas |
   |---|---|---|
-  | padrão | 85.924 KB | 137.272 KB |
-  | `winit-femtovg` | n/d | 138.172 KB |
-  | `winit-skia` | n/d | 137.792 KB |
-  | `winit-software` | 35.280 KB | 93.232 KB |
+  | padrão (`winit-software`) | 35.000–35.572 KB | 38.188–39.280 KB |
+  | `winit-femtovg` (GPU, opt-in) | 85.668 KB | 88.944 KB |
 
-  Leitura: o renderer GPU custa ~50 MB de base; as 5.000 tarefas custam ~55 MB em qualquer renderer (`for item in root.tasks` em `app.slint` instancia um `TaskRow` por tarefa, sem virtualização).
+  Leitura: a lista só instancia as linhas visíveis; 5.000 tarefas custam ~4 MB (dados no Rust). O renderer GPU custa ~50 MB de base, por isso o padrão é software. Margem: ~1 MB.
 - [x] Visões < 2 ms: saída do teste de perf → Hoje 104 µs, Próximos 187 µs, Entrada 14 µs, Projeto 20 µs, contagens 61 µs; abrir + carregar 6,0 ms

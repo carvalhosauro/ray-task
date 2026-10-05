@@ -4,11 +4,15 @@ use ray_core::writer::{SqliteSink, Writer};
 use ray_core::{db, Store, SystemClock};
 use ray_task::controller::Controller;
 use ray_task::paths::{self, LockError, Paths};
-use ray_task::{bind, logging, AppWindow};
+use ray_task::{backend, bind, logging, AppWindow};
 use slint::ComponentHandle;
 
 fn main() -> Result<(), slint::PlatformError> {
     let started = Instant::now();
+    // RAM budget, spec §1: renderer de software por padrão; SLINT_BACKEND do usuário vence.
+    if let Some(name) = backend::default_backend(std::env::var_os("SLINT_BACKEND").as_deref()) {
+        slint::BackendSelector::new().backend_name(name.into()).select()?;
+    }
     let paths = Paths::from_env();
     let _log = logging::init(&paths.log_dir);
     let ui = AppWindow::new()?;

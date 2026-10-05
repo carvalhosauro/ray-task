@@ -8,6 +8,8 @@ TODO desktop, local, leve e fluido. Rust + Slint + SQLite.
 cargo run -p ray-task --release
 ```
 
+Por padrão o app usa o renderer de software (orçamento de RAM < 40 MB); para voltar à GPU: `SLINT_BACKEND=winit-femtovg cargo run -p ray-task --release`.
+
 Requisitos no Fedora: `sudo dnf install fontconfig-devel libxkbcommon-devel wayland-devel` (dependências do backend do Slint).
 
 ## Onde ficam as coisas
