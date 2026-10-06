@@ -158,7 +158,9 @@ fn task_item(r: Row) -> TaskItem {
 
 pub(crate) fn refresh(s: &Shared) {
     let Some(ui) = s.ui.upgrade() else { return };
+    s.ctrl.borrow_mut().drop_stale_tag_list();
     let c = s.ctrl.borrow();
+    ui.global::<Actions>().set_tag_list_open(c.tag_list_open());
     ui.set_nav(ModelRc::new(VecModel::from(c.nav_rows().into_iter().map(nav_item).collect::<Vec<_>>())));
     ui.set_selected_nav(c.selected_nav() as i32);
     ui.set_view_title(c.title().into());
@@ -684,7 +686,9 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
         actions.on_remove_last_tag(move |id| {
             update(&s, |c| {
                 log_err(c.remove_last_tag(id as TaskId), "remover última tag");
-            })
+                c.tag_input(); // as opções mudaram: o destaque antigo apontaria para outra tag
+            });
+            sync_tag_list(&s, id, "");
         });
     }
     {
@@ -694,7 +698,7 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_tag_focus(move |id, focused, text| {
-            s.ctrl.borrow_mut().tag_focus(focused);
+            s.ctrl.borrow_mut().tag_focus(id as TaskId, focused);
             sync_tag_list(&s, id, &text);
         });
     }
@@ -714,8 +718,8 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
                 sync_tag_list(&s, id, &text);
                 return TagKey { handled: true, text };
             };
-            if outcome.text.is_empty() {
-                refresh(&s); // Pick / UseText: a tarefa ganhou uma tag
+            if outcome.added {
+                refresh(&s);
             }
             sync_tag_list(&s, id, &outcome.text);
             TagKey { handled: outcome.handled, text: outcome.text.into() }

@@ -69,6 +69,8 @@ fn tag_field_lists_filters_and_picks() {
     let actions = ui.global::<Actions>();
     focus_tag_field(&ui);
     assert!(actions.get_tag_list_open(), "Ctrl+T abre a lista");
+    let (top, anchor, bottom) = (actions.get_tag_clip_top(), actions.get_tag_anchor_y(), actions.get_tag_clip_bottom());
+    assert!(top < anchor && anchor <= bottom, "campo dentro da faixa visível, então a lista aparece: {top} < {anchor} <= {bottom}");
     assert_eq!(options(&actions), ["carro", "casa", "ui-kit"]);
     assert_eq!(actions.get_tag_highlighted(), -1);
 
@@ -102,4 +104,35 @@ fn escape_in_field_without_tags_reaches_the_app() {
     assert_eq!(ui.get_expanded_id() as i64, id);
     tap(&ui, Key::Escape);
     assert_eq!(ui.get_expanded_id(), -1, "sem lista à vista, o Esc fecha a tarefa");
+}
+
+#[test]
+fn list_closes_when_another_task_opens() {
+    let (ui, _binding, _id) = setup(&["casa", "carro"]);
+    let actions = ui.global::<Actions>();
+    focus_tag_field(&ui);
+    assert!(actions.get_tag_list_open());
+    let other = ui.get_tasks().row_data(1).unwrap().id;
+    actions.invoke_expand(other);
+    ms(20);
+    assert!(!actions.get_tag_list_open(), "a lista não pode ficar presa sobre outra tarefa");
+}
+
+#[test]
+fn backspace_on_empty_resyncs_the_list() {
+    let (ui, _binding, _id) = setup(&["ana", "bob", "cid"]);
+    let actions = ui.global::<Actions>();
+    focus_tag_field(&ui);
+    type_text(&ui, "ana");
+    tap(&ui, Key::Return);
+    assert_eq!(tags(&ui, 0), ["ana"]);
+    assert_eq!(options(&actions), ["bob", "cid"]);
+    tap(&ui, Key::DownArrow);
+    assert_eq!(actions.get_tag_highlighted(), 0);
+    tap(&ui, Key::Backspace);
+    assert!(tags(&ui, 0).is_empty(), "Backspace no campo vazio tira a última tag");
+    assert_eq!(options(&actions), ["ana", "bob", "cid"], "a lista volta a oferecer #ana");
+    assert_eq!(actions.get_tag_highlighted(), -1);
+    tap(&ui, Key::Return);
+    assert!(tags(&ui, 0).is_empty(), "nada destacado e campo vazio: Enter não adiciona nada");
 }

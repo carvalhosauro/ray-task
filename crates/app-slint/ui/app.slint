@@ -304,6 +304,15 @@ export component AppWindow inherits Window {
                         }
                         task-list := ListView {
                             vertical-stretch: 1;
+                            // Faixa visível: a lista de sugestões de tag some se o campo rolar para fora.
+                            property <length> clip-top: self.absolute-position.y;
+                            property <length> clip-bottom: self.absolute-position.y + self.visible-height;
+                            init => {
+                                Actions.tag-clip-top = self.clip-top;
+                                Actions.tag-clip-bottom = self.clip-bottom;
+                            }
+                            changed clip-top => { Actions.tag-clip-top = self.clip-top; }
+                            changed clip-bottom => { Actions.tag-clip-bottom = self.clip-bottom; }
                             // Nova tarefa entra no fim: rola até lá para o campo existir e receber o foco.
                             property <bool> adding: root.adding;
                             changed adding => {
@@ -419,7 +428,7 @@ export component AppWindow inherits Window {
     }
 
     // Sugestões do campo de tag, por cima de tudo (fora do FocusScope: o foco fica no campo).
-    if Actions.tag-list-open && Actions.tag-options.length > 0 : TagList {
+    if Actions.tag-list-open && Actions.tag-options.length > 0 && Actions.tag-anchor-y > Actions.tag-clip-top && Actions.tag-anchor-y <= Actions.tag-clip-bottom : TagList {
         window-height: root.height;
     }
 }

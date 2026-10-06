@@ -35,6 +35,9 @@ export global Actions {
     in-out property <length> tag-anchor-x;
     in-out property <length> tag-anchor-y;
     in-out property <int> tag-clear-request;
+    // faixa visível da lista de tarefas: o campo rolado para fora esconde a lista
+    in-out property <length> tag-clip-top;
+    in-out property <length> tag-clip-bottom;
     callback tag-focus(int, bool, string);
     callback tag-input(int, string);
     // tecla: texto do campo, `event.text` e se havia Ctrl/Alt/Meta

@@ -569,7 +569,11 @@ fn tag_names(f: &Fixture, id: ray_core::TaskId) -> Vec<String> {
 }
 
 fn key(handled: bool, text: &str) -> TagKey {
-    TagKey { handled, text: text.to_string() }
+    TagKey { handled, text: text.to_string(), added: false }
+}
+
+fn added() -> TagKey {
+    TagKey { handled: true, text: String::new(), added: true }
 }
 
 #[test]
@@ -596,10 +600,10 @@ fn tag_options_are_capped_at_six() {
 #[test]
 fn tag_key_down_then_enter_adds_the_highlighted_tag() {
     let (mut f, id) = project_with_tags(&["casa", "carro"]);
-    f.c.tag_focus(true);
+    f.c.tag_focus(id, true);
     assert_eq!(f.c.tag_key(id, "ca", Nav::Down), Ok(key(true, "ca")));
     assert_eq!(f.c.tag_highlighted(), Some(0));
-    assert_eq!(f.c.tag_key(id, "ca", Nav::Enter), Ok(key(true, "")));
+    assert_eq!(f.c.tag_key(id, "ca", Nav::Enter), Ok(added()));
     assert_eq!(tag_names(&f, id), ["carro"]);
     assert!(!f.c.tag_list_open());
 }
@@ -607,15 +611,15 @@ fn tag_key_down_then_enter_adds_the_highlighted_tag() {
 #[test]
 fn tag_key_enter_without_highlight_adds_typed_text() {
     let (mut f, id) = project_with_tags(&["casa"]);
-    f.c.tag_focus(true);
-    assert_eq!(f.c.tag_key(id, "ca", Nav::Enter), Ok(key(true, "")));
+    f.c.tag_focus(id, true);
+    assert_eq!(f.c.tag_key(id, "ca", Nav::Enter), Ok(added()));
     assert_eq!(tag_names(&f, id), ["ca"], "Enter usa o texto, não a sugestão");
 }
 
 #[test]
 fn enter_on_empty_query_adds_nothing() {
     let (mut f, id) = project_with_tags(&["casa"]);
-    f.c.tag_focus(true);
+    f.c.tag_focus(id, true);
     assert_eq!(f.c.tag_key(id, "  ", Nav::Enter), Ok(key(true, "")));
     assert!(tag_names(&f, id).is_empty());
 }
@@ -623,7 +627,7 @@ fn enter_on_empty_query_adds_nothing() {
 #[test]
 fn tag_key_tab_completes() {
     let (mut f, id) = project_with_tags(&["casa", "carro"]);
-    f.c.tag_focus(true);
+    f.c.tag_focus(id, true);
     assert_eq!(f.c.tag_key(id, "cas", Nav::Tab), Ok(key(true, "casa")));
     assert_eq!(f.c.tag_key(id, "zz", Nav::Tab), Ok(key(false, "zz")));
     assert!(tag_names(&f, id).is_empty(), "Tab só completa o texto");
@@ -632,7 +636,7 @@ fn tag_key_tab_completes() {
 #[test]
 fn tag_key_ignored_without_options() {
     let (mut f, id) = project_with_tags(&["casa"]);
-    f.c.tag_focus(true);
+    f.c.tag_focus(id, true);
     assert_eq!(f.c.tag_key(id, "zzz", Nav::Down), Ok(key(false, "zzz")), "↓ segue para o app");
     assert_eq!(f.c.tag_key(id, "zzz", Nav::Up), Ok(key(false, "zzz")));
 }
@@ -640,7 +644,7 @@ fn tag_key_ignored_without_options() {
 #[test]
 fn tag_key_escape_closes_then_is_ignored() {
     let (mut f, id) = project_with_tags(&["casa"]);
-    f.c.tag_focus(true);
+    f.c.tag_focus(id, true);
     assert!(f.c.tag_list_open());
     assert_eq!(f.c.tag_key(id, "", Nav::Escape), Ok(key(true, "")));
     assert!(!f.c.tag_list_open());
@@ -650,10 +654,50 @@ fn tag_key_escape_closes_then_is_ignored() {
 #[test]
 fn tag_pick_adds_and_closes() {
     let (mut f, id) = project_with_tags(&["casa", "carro"]);
-    f.c.tag_focus(true);
+    f.c.tag_focus(id, true);
     f.c.tag_key(id, "", Nav::Down).unwrap();
     f.c.tag_pick(id, "casa").unwrap();
     assert_eq!(tag_names(&f, id), ["casa"]);
     assert!(!f.c.tag_list_open());
     assert_eq!(f.c.tag_highlighted(), None);
+}
+
+#[test]
+fn tag_list_closes_when_its_task_is_no_longer_open() {
+    let (mut f, id) = project_with_tags(&["casa"]);
+    f.c.toggle_expand(id);
+    f.c.tag_focus(id, true);
+    assert!(f.c.tag_list_open());
+    f.c.drop_stale_tag_list();
+    assert!(f.c.tag_list_open(), "a tarefa da lista continua aberta");
+    let other = f.c.rows().into_iter().find(|r| r.id != id).unwrap().id;
+    f.c.toggle_expand(other);
+    f.c.drop_stale_tag_list();
+    assert!(!f.c.tag_list_open());
+    f.c.toggle_expand(id);
+    f.c.drop_stale_tag_list();
+    assert!(!f.c.tag_list_open(), "reabrir a tarefa não reabre a lista sem foco no campo");
+}
+
+#[test]
+fn blur_from_another_field_does_not_close_the_list() {
+    let (mut f, id) = project_with_tags(&["casa"]);
+    f.c.tag_focus(id, true);
+    f.c.tag_focus(id + 100, false);
+    assert!(f.c.tag_list_open());
+    f.c.tag_focus(id, false);
+    assert!(!f.c.tag_list_open());
+}
+
+#[test]
+fn tag_key_reports_whether_a_tag_was_added() {
+    let (mut f, id) = project_with_tags(&["casa"]);
+    f.c.tag_focus(id, true);
+    assert!(!f.c.tag_key(id, "", Nav::Down).unwrap().added);
+    assert!(!f.c.tag_key(id, "", Nav::Up).unwrap().added);
+    assert!(!f.c.tag_key(id, "", Nav::Enter).unwrap().added, "Enter vazio não adiciona");
+    assert!(f.c.tag_key(id, "novo", Nav::Enter).unwrap().added);
+    f.c.tag_input();
+    f.c.tag_key(id, "", Nav::Down).unwrap();
+    assert!(f.c.tag_key(id, "", Nav::Enter).unwrap().added, "Pick adiciona");
 }
