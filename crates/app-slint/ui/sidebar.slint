@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import { NavItem } from "types.slint";
 import { Actions } from "globals.slint";
-import { Icon, MenuPanel, MenuEntry } from "components.slint";
+import { Icon, IconButton, MenuPanel, MenuEntry } from "components.slint";
 
 component NavRowView inherits Rectangle {
     in property <NavItem> item;
@@ -121,6 +121,9 @@ export component Sidebar inherits Rectangle {
     // Lista rolável entre a busca e "Novo projeto" (recorta o que passa da área).
     // Seleção pelo teclado (Ctrl+1..9) fora da área: rola até a linha ficar inteira.
     changed selected => {
+        if (root.selected < 0) {
+            return;
+        }
         let top = root.row-y(root.selected);
         if (top + list.content-y < 0px) {
             list.content-y = min(0px, 4px - top);
@@ -133,6 +136,7 @@ export component Sidebar inherits Rectangle {
         height: parent.height - 52px - 48px;
         content-height: root.row-y(root.nav.length) + 12px;
         Rectangle {
+            visible: root.selected >= 0;
             x: 10px;
             y: root.row-y(root.selected);
             width: parent.width - 20px;
@@ -162,7 +166,7 @@ export component Sidebar inherits Rectangle {
     Rectangle {
         x: 10px;
         y: parent.height - 44px;
-        width: parent.width - 20px;
+        width: parent.width - 20px - 36px;
         height: 32px;
         border-radius: 8px;
         background: np.has-hover ? Theme.selection.with-alpha(0.5) : transparent;
@@ -178,5 +182,13 @@ export component Sidebar inherits Rectangle {
             }
             Text { text: "Novo projeto"; color: Theme.sub; font-size: 14px; vertical-alignment: center; }
         }
+    }
+
+    IconButton {
+        x: parent.width - 10px - self.width;
+        y: parent.height - 44px;
+        icon: @image-url("icons/sliders.svg");
+        label: "Configurações";
+        clicked => { Actions.open-settings(); }
     }
 }

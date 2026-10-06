@@ -4,12 +4,12 @@ use std::time::{Duration, Instant};
 
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use ray_core::writer::WriterEvent;
-use ray_core::{DomainError, TaskId, View};
+use ray_core::{DomainError, TaskId, ThemeMode, View};
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
-use crate::controller::{Controller, Nav, NavRow, QuickDate, Row};
+use crate::controller::{Controller, Nav, NavRow, Page, QuickDate, Row};
 use crate::keys::{self, KeyAction};
-use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TagKey, TaskItem};
+use crate::{Actions, AppWindow, CalCell, HelpItem, NavItem, Picker, Prefs, ProjectChoice, TagChip, TagKey, TaskItem, Theme};
 
 pub const TOAST_UNDO: i32 = 0;
 pub const TOAST_RETRY: i32 = 1;
@@ -94,6 +94,12 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
     wire_projects(ui, &shared);
     wire_details(ui, &shared);
     wire_keyboard(ui, &shared);
+    wire_settings(ui, &shared);
+    let prefs = ui.global::<Prefs>();
+    prefs.set_version(env!("CARGO_PKG_VERSION").into());
+    let help: Vec<HelpItem> =
+        keys::help_items().into_iter().map(|(keys, text)| HelpItem { keys: keys.into(), text: text.into() }).collect();
+    prefs.set_help_rows(ModelRc::new(VecModel::from(help)));
     let timers = vec![start_clock(&shared)];
     refresh(&shared);
     Binding { shared, _timers: timers }
@@ -112,6 +118,22 @@ pub(crate) fn log_err<T>(result: Result<T, DomainError>, what: &str) -> Option<T
 pub(crate) fn update(s: &Shared, f: impl FnOnce(&mut Controller)) {
     f(&mut s.ctrl.borrow_mut());
     refresh(s);
+}
+
+fn theme_int(mode: ThemeMode) -> i32 {
+    match mode {
+        ThemeMode::System => 0,
+        ThemeMode::Light => 1,
+        ThemeMode::Dark => 2,
+    }
+}
+
+fn theme_from_int(n: i32) -> ThemeMode {
+    match n {
+        1 => ThemeMode::Light,
+        2 => ThemeMode::Dark,
+        _ => ThemeMode::System,
+    }
 }
 
 fn hex(s: &str) -> Color {
@@ -162,7 +184,14 @@ pub(crate) fn refresh(s: &Shared) {
     let c = s.ctrl.borrow();
     ui.global::<Actions>().set_tag_list_open(c.tag_list_open());
     ui.set_nav(ModelRc::new(VecModel::from(c.nav_rows().into_iter().map(nav_item).collect::<Vec<_>>())));
-    ui.set_selected_nav(c.selected_nav() as i32);
+    ui.set_selected_nav(if c.page == Page::Settings { -1 } else { c.selected_nav() as i32 });
+    ui.set_page(c.page.as_int());
+    ui.set_help_open(c.help_open);
+    let settings = c.store.settings();
+    ui.global::<Theme>().set_mode(theme_int(settings.theme));
+    let prefs = ui.global::<Prefs>();
+    prefs.set_theme_mode(theme_int(settings.theme));
+    prefs.set_update_check(settings.update_check);
     ui.set_view_title(c.title().into());
     ui.set_view_subtitle(c.subtitle().into());
     // Linhas da mesma tarefa são reaproveitadas para as animações rodarem.
@@ -295,17 +324,13 @@ fn anim_fired(s: &Rc<Shared>, deadline: Duration) {
     arm_anim(s);
 }
 
-/// Crossfade: some (60 ms), troca o conteúdo, reaparece (60 ms). A seleção da sidebar desliza na hora.
-pub(crate) fn switch_view(s: &Rc<Shared>, view: View, nav_index: usize) {
+/// Crossfade: some (60 ms), troca o conteúdo, reaparece (60 ms).
+fn crossfade(s: &Rc<Shared>, change: impl FnOnce(&mut Controller) + 'static) {
     let Some(ui) = s.ui.upgrade() else { return };
-    if s.ctrl.borrow().view == view {
-        return;
-    }
-    ui.set_selected_nav(nav_index as i32);
     ui.set_content_faded(true);
     let s1 = s.clone();
     Timer::single_shot(Duration::from_millis(60), move || {
-        update(&s1, |c| c.select_view(view));
+        update(&s1, change);
         // Pedido de data pendente da visão anterior não pode abrir o popover mais tarde.
         close_picker(&s1);
         if let Some(ui) = s1.ui.upgrade() {
@@ -313,6 +338,39 @@ pub(crate) fn switch_view(s: &Rc<Shared>, view: View, nav_index: usize) {
             ui.invoke_focus_root();
         }
     });
+}
+
+/// Troca de visão com crossfade. A seleção da sidebar desliza na hora.
+pub(crate) fn switch_view(s: &Rc<Shared>, view: View, nav_index: usize) {
+    let Some(ui) = s.ui.upgrade() else { return };
+    {
+        let c = s.ctrl.borrow();
+        if c.view == view && c.page == Page::Tasks {
+            return;
+        }
+    }
+    ui.set_selected_nav(nav_index as i32);
+    crossfade(s, move |c| c.select_view(view));
+}
+
+fn wire_settings(ui: &AppWindow, s: &Rc<Shared>) {
+    let actions = ui.global::<Actions>();
+    {
+        let s = s.clone();
+        actions.on_open_settings(move || {
+            if s.ctrl.borrow().page != Page::Settings {
+                crossfade(&s, |c| c.open_settings());
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_set_theme(move |n| update(&s, |c| c.set_theme(theme_from_int(n))));
+    }
+    {
+        let s = s.clone();
+        actions.on_set_update_check(move |on| update(&s, |c| c.set_update_check(on)));
+    }
 }
 
 fn wire_tasks(ui: &AppWindow, s: &Rc<Shared>) {
@@ -762,10 +820,6 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
             }
             true
         });
-    }
-    {
-        let s = s.clone();
-        actions.on_open_settings(move || update(&s, |c| c.open_settings()));
     }
     {
         let s = s.clone();

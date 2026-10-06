@@ -1,0 +1,83 @@
+import { Theme } from "theme.slint";
+import { Actions, Prefs } from "globals.slint";
+import { Segmented, Switch, DialogButton } from "components.slint";
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: 10px;
+    Text { text: root.title; font-size: 15px; font-weight: 600; color: Theme.text; }
+    Rectangle { height: 1px; background: Theme.line; }
+    @children
+}
+
+/// Configurações: ocupa o lugar da lista de tarefas (Esc ou a barra lateral voltam).
+export component SettingsPage inherits Rectangle {
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: 32px;
+            padding-right: 24px;
+            padding-top: 28px;
+            padding-bottom: 10px;
+            Text { text: "Configurações"; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: Theme.text; }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: body.preferred-height;
+            body := VerticalLayout {
+                alignment: start;
+                padding-left: 32px;
+                padding-right: 32px;
+                padding-top: 8px;
+                padding-bottom: 32px;
+                spacing: 28px;
+                Section {
+                    title: "Aparência";
+                    HorizontalLayout {
+                        alignment: start;
+                        Segmented {
+                            options: ["Sistema", "Claro", "Escuro"];
+                            selected: Prefs.theme-mode;
+                            picked(i) => { Actions.set-theme(i); }
+                        }
+                    }
+                }
+                Section {
+                    title: "Atualizações";
+                    Text { text: "Versão " + Prefs.version; font-size: 13.5px; color: Theme.text; }
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 10px;
+                        VerticalLayout {
+                            alignment: center;
+                            Switch {
+                                label: "Verificar automaticamente";
+                                checked: Prefs.update-check;
+                                toggled(on) => { Actions.set-update-check(on); }
+                            }
+                        }
+                        Text {
+                            accessible-role: none;
+                            accessible-label: "";
+                            text: "Verificar automaticamente";
+                            font-size: 13.5px;
+                            color: Theme.text;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Text {
+                        text: "Consulta o GitHub uma vez por dia. Nada além disso é enviado.";
+                        font-size: 12.5px;
+                        color: Theme.sub;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 12px;
+                        DialogButton { text: "Verificar agora"; clicked => { Actions.check-updates(); } }
+                        Text { text: Prefs.update-status; font-size: 13px; color: Theme.sub; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+    }
+}

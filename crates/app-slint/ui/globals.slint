@@ -1,4 +1,4 @@
-import { ProjectChoice, CalCell, TagKey } from "types.slint";
+import { ProjectChoice, CalCell, TagKey, HelpItem } from "types.slint";
 
 export global Actions {
     // navegação
@@ -68,6 +68,23 @@ export global Actions {
     callback prompt-accept(string);
     callback confirm-accept();
     callback dialog-cancel();
+    // configurações e atualização
+    callback set-theme(int);
+    callback set-update-check(bool);
+    callback check-updates();
+}
+
+// Estado das configurações e do aviso de atualização (preenchido pelo Rust).
+export global Prefs {
+    in property <int> theme-mode;
+    in property <bool> update-check: true;
+    in property <string> version;
+    in property <string> update-status;
+    // versão nova disponível ("" = nenhuma) e o resumo das notas
+    in property <string> notice-version;
+    in property <string> notice-notes;
+    in property <string> install-command;
+    in property <[HelpItem]> help-rows;
 }
 
 export global Picker {
