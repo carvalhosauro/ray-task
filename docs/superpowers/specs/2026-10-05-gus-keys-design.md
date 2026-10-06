@@ -136,7 +136,7 @@ pub struct HelpRow { pub chords: &'static [&'static str], pub label: &'static st
 pub const HELP: &[HelpRow];
 ```
 
-`keymap()` binds the 20 global shortcuts that exist today: `Ctrl+N`, `Ctrl+Shift+N`, `Up`,
+`keymap()` binds the 21 global shortcuts that exist today: `Ctrl+N`, `Ctrl+Shift+N`, `Up`,
 `Down`, `Enter`, `Esc`, `Ctrl+Enter`, `Ctrl+D`, `Ctrl+T`, `Delete`, `Ctrl+Z`, `Ctrl+1`…`Ctrl+9`
 (`SelectNav(0..=8)`), `Ctrl+F`.
 
