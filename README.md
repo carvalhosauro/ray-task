@@ -99,12 +99,14 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/carvalhosauro/ray-
 cargo install --git https://github.com/carvalhosauro/ray-task ray-task
 ```
 
+Then run `ray-task` once from the terminal. On first launch it adds itself to your app menu (Linux) or Start menu (Windows), so after that you can open it like any other app. Set `RAY_TASK_NO_SHORTCUT=1` to skip this. The MSI creates its Start menu shortcut during install.
+
 Prebuilt archives for every platform are on the [releases page](https://github.com/carvalhosauro/ray-task/releases/latest).
 
 <details>
-<summary><b>Linux: add ray-task to your application menu</b></summary>
+<summary><b>Linux: installing from the downloaded archive</b></summary>
 
-Download and extract the archive for your architecture from the releases page, then run:
+Extract the archive for your architecture from the releases page, then run:
 
 ```sh
 ./install-desktop.sh

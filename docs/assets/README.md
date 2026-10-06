@@ -26,8 +26,24 @@ Once it exists, uncomment the demo block at the top of the root `README.md`.
   ```
 - Keep it under 5 MB (GitHub renders larger GIFs slowly). Lower `--quality` or `fps` if needed.
 
+## App icon
+
+`icon.png` is the master (1890×1890). All app icons are derived from it:
+
+```bash
+python3 - <<'PY'
+from PIL import Image
+src = Image.open('docs/assets/icon.png').convert('RGBA')
+for n in [16, 32, 48, 64, 128, 256, 512]:
+    src.resize((n, n), Image.LANCZOS).save(f'crates/app-slint/assets/icon/ray-task-{n}.png', optimize=True)
+src.resize((256, 256), Image.LANCZOS).save('crates/app-slint/wix/Product.ico',
+    sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+PY
+```
+
 ## Social preview
 
 `social-preview.png` is rendered from `social-preview.html` at 1280×640. Serve the repo root
 (`python3 -m http.server`), open the page at that viewport size and screenshot it.
+Chromium may tag the screenshot with its display ICC profile, which washes out the blue; convert it to sRGB before committing.
 Upload the PNG in GitHub Settings → General → Social preview.

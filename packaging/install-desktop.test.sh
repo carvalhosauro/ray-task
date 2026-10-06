@@ -19,7 +19,7 @@ chmod +x "$pkg/ray-task"
 home="$work/home dir"
 data="$work/data home"
 mkdir -p "$home"
-(cd / && HOME="$home" XDG_DATA_HOME="$data" PATH=/usr/bin:/bin sh "$pkg/install-desktop.sh") >/dev/null
+(cd / && env -u CARGO_HOME HOME="$home" XDG_DATA_HOME="$data" PATH=/usr/bin:/bin sh "$pkg/install-desktop.sh") >/dev/null
 
 for f in "applications/ray-task.desktop" \
          "icons/hicolor/16x16/apps/ray-task.png" \
@@ -36,7 +36,7 @@ rm "$pkg/ray-task"
 data2="$work/data2"
 home2="$work/home2"
 mkdir -p "$home2"
-if out=$(cd / && HOME="$home2" XDG_DATA_HOME="$data2" PATH=/usr/bin:/bin sh "$pkg/install-desktop.sh" 2>&1); then
+if out=$(cd / && env -u CARGO_HOME HOME="$home2" XDG_DATA_HOME="$data2" PATH=/usr/bin:/bin sh "$pkg/install-desktop.sh" 2>&1); then
   echo "FAIL: succeeded without a ray-task binary"; fail=1
 fi
 case $out in *"ray-task binary not found"*) ;; *) echo "FAIL: unclear message: $out"; fail=1 ;; esac
