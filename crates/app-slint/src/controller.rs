@@ -5,7 +5,7 @@ use chrono::{Days, NaiveDate, NaiveDateTime};
 use gus_anim_state::Timeline;
 pub use gus_combobox::Nav;
 use gus_combobox::{Combobox, Outcome};
-use ray_core::{matches_query, DomainError, Due, ProjectId, Store, Tag, TagId, Task, TaskId, View, WriteOp, PROJECT_COLORS};
+use ray_core::{matches_query, DomainError, Due, ProjectId, Store, Tag, TagId, Task, TaskId, ThemeMode, View, WriteOp, PROJECT_COLORS};
 
 use crate::present::{self, CalDay, Tone};
 
@@ -77,6 +77,22 @@ pub enum QuickDate {
     Clear,
 }
 
+/// Página no lugar da lista de tarefas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    Tasks,
+    Settings,
+}
+
+impl Page {
+    pub fn as_int(self) -> i32 {
+        match self {
+            Page::Tasks => 0,
+            Page::Settings => 1,
+        }
+    }
+}
+
 /// Em qual parte da lista uma tarefa cai; o início de cada parte ganha um cabeçalho.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
@@ -120,6 +136,9 @@ pub struct Controller {
     tag_task: Option<TaskId>,
     /// Tarefas apagadas nesta sessão: o desfazer que as restaura volta a selecioná-las.
     deleted: HashSet<TaskId>,
+    pub page: Page,
+    /// Overlay de atalhos (F1 / ?).
+    pub help_open: bool,
 }
 
 impl Controller {
@@ -143,6 +162,8 @@ impl Controller {
             tag_combo: Combobox::default(),
             tag_task: None,
             deleted: HashSet::new(),
+            page: Page::Tasks,
+            help_open: false,
         }
     }
 
@@ -460,6 +481,26 @@ impl Controller {
         self.filter_open = false;
         self.show_done = false;
         self.popover_task = None;
+        self.page = Page::Tasks;
+    }
+
+    pub fn open_settings(&mut self) {
+        self.page = Page::Settings;
+        self.popover_task = None;
+    }
+
+    pub fn toggle_help(&mut self) {
+        self.help_open = !self.help_open;
+    }
+
+    pub fn set_theme(&mut self, theme: ThemeMode) {
+        self.store.set_theme(theme);
+        self.flush();
+    }
+
+    pub fn set_update_check(&mut self, on: bool) {
+        self.store.set_update_check(on);
+        self.flush();
     }
 
     pub fn toggle_expand(&mut self, id: TaskId) {
@@ -474,8 +515,17 @@ impl Controller {
         self.selected = gus_list::step(&keys, self.selected.as_ref(), delta as isize, |id| !self.is_leaving(*id)).copied();
     }
 
-    /// Esc fecha uma camada por vez: captura → popover → tarefa aberta → filtro → seleção.
+    /// Esc fecha uma camada por vez: overlay de atalhos → configurações → captura → popover →
+    /// tarefa aberta → filtro → seleção.
     pub fn escape(&mut self) {
+        if self.help_open {
+            self.help_open = false;
+            return;
+        }
+        if self.page == Page::Settings {
+            self.page = Page::Tasks;
+            return;
+        }
         if self.adding {
             self.adding = false;
         } else if self.popover_task.is_some() {

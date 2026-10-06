@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use ray_core::{FixedClock, Snapshot, Store, View, WriteOp};
-use ray_task::controller::{Controller, QuickDate};
+use ray_core::{FixedClock, Snapshot, Store, ThemeMode, View, WriteOp};
+use ray_task::controller::{Controller, Page, QuickDate};
 use ray_task::controller::{Nav, TagKey};
 use ray_task::present::Tone;
 
@@ -700,4 +700,41 @@ fn tag_key_reports_whether_a_tag_was_added() {
     f.c.tag_input();
     f.c.tag_key(id, "", Nav::Down).unwrap();
     assert!(f.c.tag_key(id, "", Nav::Enter).unwrap().added, "Pick adiciona");
+}
+
+#[test]
+fn escape_closes_help_then_settings_then_task_state() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.start_adding();
+    f.c.open_settings();
+    f.c.toggle_help();
+    assert!(f.c.help_open);
+    f.c.escape();
+    assert!(!f.c.help_open);
+    assert_eq!(f.c.page, Page::Settings);
+    f.c.escape();
+    assert_eq!(f.c.page, Page::Tasks);
+    assert!(f.c.adding, "o Esc que saiu das configurações não mexe na lista");
+    f.c.escape();
+    assert!(!f.c.adding);
+}
+
+#[test]
+fn selecting_a_view_leaves_settings() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.open_settings();
+    f.c.select_view(View::Inbox);
+    assert_eq!(f.c.page, Page::Tasks);
+}
+
+#[test]
+fn theme_and_update_toggle_are_persisted() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.set_theme(ThemeMode::Dark);
+    f.c.set_update_check(false);
+    assert_eq!(f.c.store.settings().theme, ThemeMode::Dark);
+    assert!(!f.c.store.settings().update_check);
+    let sent = f.sent.borrow();
+    assert!(sent.contains(&WriteOp::SetSetting { key: "theme", value: "dark".into() }));
+    assert!(sent.contains(&WriteOp::SetSetting { key: "update_check", value: "0".into() }));
 }
