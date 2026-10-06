@@ -4,5 +4,7 @@
 //! likes. Part of the GusStack family; extracted from ray-task.
 
 mod group;
+mod select;
 
 pub use group::group_runs;
+pub use select::step;
