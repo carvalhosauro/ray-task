@@ -11,7 +11,14 @@ pub fn chord_from_slint(text: &str, ctrl: bool, shift: bool, alt: bool, meta: bo
     let mut chars = text.chars();
     let (Some(c), None) = (chars.next(), chars.next()) else { return None };
     let key = named(c).or_else(|| is_printable(c).then_some(Key::Char(c)))?;
+    // Num caractere sem maiúscula/minúscula (dígito, símbolo) o Shift já está no texto: em
+    // layouts como o AZERTY, `1` só sai com Shift e deve casar com `Ctrl+1`.
+    let shift = shift && !matches!(key, Key::Char(c) if is_caseless(c));
     Some(Chord::new(key, Mods { ctrl, shift, alt, meta }))
+}
+
+fn is_caseless(c: char) -> bool {
+    c.to_lowercase().eq(c.to_uppercase())
 }
 
 fn named(c: char) -> Option<Key> {
@@ -103,6 +110,15 @@ mod tests {
         for key in [SlintKey::Control, SlintKey::Shift, SlintKey::Alt, SlintKey::Meta, SlintKey::F1, SlintKey::Insert] {
             assert_eq!(chord_from_slint(&text(key), true, false, false, false), None, "{key:?}");
         }
+    }
+
+    #[test]
+    fn shift_is_dropped_for_caseless_chars() {
+        // AZERTY: o dígito só sai com Shift; o texto já diz qual tecla saiu.
+        assert_eq!(chord_from_slint("1", true, true, false, false).unwrap(), "Ctrl+1".parse().unwrap());
+        assert_eq!(chord_from_slint("!", true, true, false, false).unwrap(), "Ctrl+!".parse().unwrap());
+        assert_eq!(chord_from_slint("n", true, true, false, false).unwrap(), "Ctrl+Shift+N".parse().unwrap(), "letters keep Shift");
+        assert_eq!(chord_from_slint(&text(SlintKey::UpArrow), false, true, false, false).unwrap(), "Shift+Up".parse().unwrap());
     }
 
     #[test]

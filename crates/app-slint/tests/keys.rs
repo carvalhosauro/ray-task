@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use gus_keys::Chord;
+use gus_keys::{Chord, Key};
 use ray_task::keys::{keymap, KeyAction, HELP};
 
 fn chord(s: &str) -> Chord {
@@ -60,11 +60,46 @@ fn help_rows_cover_exactly_the_keymap() {
     assert!(unbound.is_empty(), "ajuda de atalhos que não existem: {unbound:?}");
 }
 
-#[test]
-fn readme_lists_every_help_row() {
-    let readme = include_str!("../../../README.md");
-    for row in HELP {
-        let line = format!("| {} | {} |", row.label, row.text);
-        assert!(readme.contains(&line), "README sem a linha: {line}");
+/// Atalhos que o rótulo mostra: cada `token` é um atalho; um token sem `+` herda os modificadores
+/// do anterior (`Ctrl+1` / `2`); `A` … `B` inclui a faixa de dígitos entre eles; setas são Up/Down.
+fn label_chords(label: &str) -> HashSet<Chord> {
+    let parts: Vec<&str> = label.split('`').collect();
+    let mut out: Vec<Chord> = Vec::new();
+    for (i, token) in parts.iter().enumerate().skip(1).step_by(2) {
+        let token = match *token {
+            "↑" => "Up",
+            "↓" => "Down",
+            other => other,
+        };
+        let mut next = chord(token);
+        if let Some(previous) = out.last() {
+            if !token.contains('+') {
+                next.mods = previous.mods;
+            }
+            if parts[i - 1].contains('…') {
+                let (Key::Char(from), Key::Char(to)) = (previous.key, next.key) else { panic!("faixa só de dígitos: {label}") };
+                let middle: Vec<Chord> = (from..to).skip(1).map(|c| Chord::new(Key::Char(c), next.mods)).collect();
+                out.extend(middle);
+            }
+        }
+        out.push(next);
     }
+    out.into_iter().collect()
+}
+
+#[test]
+fn help_labels_show_exactly_their_chords() {
+    for row in HELP {
+        let declared: HashSet<Chord> = row.chords.iter().map(|s| chord(s)).collect();
+        assert_eq!(label_chords(row.label), declared, "rótulo {} não bate com {:?}", row.label, row.chords);
+    }
+}
+
+#[test]
+fn readme_table_is_exactly_the_help_rows() {
+    let readme = include_str!("../../../README.md");
+    let section = readme.split("## Keyboard first").nth(1).expect("seção de atalhos no README");
+    let rows: Vec<&str> = section.lines().skip_while(|l| !l.starts_with("|---")).skip(1).take_while(|l| l.starts_with('|')).collect();
+    let expected: Vec<String> = HELP.iter().map(|row| format!("| {} | {} |", row.label, row.text)).collect();
+    assert_eq!(rows, expected, "a tabela do README e `keys::HELP` divergem");
 }
