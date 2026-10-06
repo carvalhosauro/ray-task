@@ -1625,6 +1625,14 @@ name = "gus-keys"
 version = "0.1.0"
 
 [[package]]
+name = "gus-keys-slint"
+version = "0.1.0"
+dependencies = [
+ "gus-keys",
+ "slint",
+]
+
+[[package]]
 name = "gus-list"
 version = "0.1.0"
 

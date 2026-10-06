@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/gus-list", "crates/gus-list-slint", "crates/gus-anim-state", "crates/gus-keys", "crates/app-slint"]
+members = ["crates/core", "crates/gus-list", "crates/gus-list-slint", "crates/gus-anim-state", "crates/gus-keys", "crates/gus-keys-slint", "crates/app-slint"]
 
 [workspace.package]
 edition = "2021"
