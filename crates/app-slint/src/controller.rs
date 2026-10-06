@@ -436,10 +436,13 @@ impl Controller {
     /// Retorna `true` se ficou concluída (a linha fica visível até o fim da animação de saída).
     pub fn toggle(&mut self, id: TaskId, now: Duration) -> Result<bool, DomainError> {
         let done = self.store.toggle_complete(id)?;
-        if done {
-            self.exits.play(id, &COMPLETE_SCRIPT, now);
-        } else {
-            self.exits.cancel(&id);
+        // Apagar vence: alternar durante a animação de apagar não desfaz o apagar.
+        if self.exits.phase(&id) != Some(&Exit::Deleting) {
+            if done {
+                self.exits.play(id, &COMPLETE_SCRIPT, now);
+            } else {
+                self.exits.cancel(&id);
+            }
         }
         self.flush();
         Ok(done)

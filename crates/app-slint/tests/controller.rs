@@ -524,3 +524,27 @@ fn failed_delete_is_reported() {
     assert!(f.c.undo(), "desfaz a remoção feita direto no store");
     assert_eq!(f.c.selected, None, "não foi o app que apagou: o desfazer não seleciona a tarefa");
 }
+
+#[test]
+fn toggle_during_delete_still_deletes() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    assert!(f.c.begin_delete(a, ms(0)));
+    assert_eq!(f.c.toggle(a, ms(100)), Ok(true));
+    assert!(f.c.rows()[0].leaving, "a linha continua saindo");
+    assert_eq!(f.c.advance(ms(220)), vec![Ok(a)], "apagar vence");
+    assert!(f.c.store.task(a).is_none());
+}
+
+#[test]
+fn uncompleting_during_delete_still_deletes() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.create_project("Casa").unwrap();
+    let a = f.c.commit_new("a").unwrap();
+    f.c.toggle(a, ms(0)).unwrap();
+    f.c.advance(ms(820));
+    f.c.toggle_show_done();
+    assert!(f.c.begin_delete(a, ms(1_000)));
+    assert_eq!(f.c.toggle(a, ms(1_100)), Ok(false));
+    assert_eq!(f.c.advance(ms(1_220)), vec![Ok(a)], "apagar vence");
+}
