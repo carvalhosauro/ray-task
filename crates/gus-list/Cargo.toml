@@ -1,0 +1,9 @@
+[package]
+name = "gus-list"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+description = "Headless list logic: group runs, keyboard selection by key, keyed diff."

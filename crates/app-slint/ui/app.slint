@@ -211,34 +211,8 @@ export component AppWindow inherits Window {
 
     keys := FocusScope {
         key-pressed(event) => {
-            if (event.modifiers.control) {
-                if (event.text == "n" || event.text == "N") {
-                    if (event.modifiers.shift) { Actions.new-project(); } else { Actions.new-task(); }
-                    return accept;
-                }
-                if (event.text == "f" || event.text == "F") { Actions.toggle-filter(); return accept; }
-                if (event.text == "z" || event.text == "Z") { Actions.undo(); return accept; }
-                if (event.text == "d" || event.text == "D") { Actions.date-selected(); return accept; }
-                if (event.text == "t" || event.text == "T") { Actions.tag-selected(); return accept; }
-                if (event.text == Key.Return) { Actions.toggle-selected(); return accept; }
-                if (event.text == "1") { Actions.select-nav(0); return accept; }
-                if (event.text == "2") { Actions.select-nav(1); return accept; }
-                if (event.text == "3") { Actions.select-nav(2); return accept; }
-                // Ctrl+4..9: projetos na ordem da sidebar (índices 3..8 em `nav`).
-                if (event.text == "4") { Actions.select-nav(3); return accept; }
-                if (event.text == "5") { Actions.select-nav(4); return accept; }
-                if (event.text == "6") { Actions.select-nav(5); return accept; }
-                if (event.text == "7") { Actions.select-nav(6); return accept; }
-                if (event.text == "8") { Actions.select-nav(7); return accept; }
-                if (event.text == "9") { Actions.select-nav(8); return accept; }
-                return reject;
-            }
-            if (event.text == Key.UpArrow) { Actions.move-selection(-1); return accept; }
-            if (event.text == Key.DownArrow) { Actions.move-selection(1); return accept; }
-            if (event.text == Key.Return) { Actions.expand-selected(); return accept; }
-            if (event.text == Key.Escape) { Actions.escape(); return accept; }
-            if (event.text == Key.Delete) { Actions.delete-selected(); return accept; }
-            return reject;
+            // Atalhos globais: keymap em Rust (crates/app-slint/src/keys.rs), também a fonte da tabela do README.
+            return Actions.key(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt, event.modifiers.meta) ? accept : reject;
         }
 
         if root.fatal-error != "" : Rectangle {

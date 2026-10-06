@@ -1,7 +1,6 @@
 use std::cell::{Cell, Ref, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use ray_core::writer::WriterEvent;
@@ -9,6 +8,7 @@ use ray_core::{DomainError, TaskId, View};
 use slint::{Color, ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
 
 use crate::controller::{Controller, NavRow, QuickDate, Row};
+use crate::keys::{self, KeyAction};
 use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TaskItem};
 
 pub const TOAST_UNDO: i32 = 0;
@@ -25,12 +25,37 @@ pub(crate) enum Pending {
     MoveTask(TaskId, Option<ray_core::ProjectId>),
 }
 
+/// Relógio das animações. O backend de testes do Slint adianta o tempo dos timers, não o
+/// `Instant`; por isso o relógio nunca fica atrás do último prazo que o timer cumpriu.
+struct AnimClock {
+    start: Instant,
+    last: Cell<Duration>,
+}
+
+impl AnimClock {
+    fn new() -> Self {
+        Self { start: Instant::now(), last: Cell::new(Duration::ZERO) }
+    }
+
+    fn now(&self) -> Duration {
+        let now = self.start.elapsed().max(self.last.get());
+        self.last.set(now);
+        now
+    }
+
+    fn reached(&self, deadline: Duration) {
+        self.last.set(self.last.get().max(deadline));
+    }
+}
+
 pub(crate) struct Shared {
     pub(crate) ui: slint::Weak<AppWindow>,
     pub(crate) ctrl: RefCell<Controller>,
     tasks: Rc<VecModel<TaskItem>>,
     pub(crate) pending: RefCell<Option<Pending>>,
     toast_timer: Timer,
+    anim_clock: AnimClock,
+    anim_timer: Timer,
     pub(crate) retry: Box<dyn Fn()>,
 }
 
@@ -61,6 +86,8 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
         tasks,
         pending: RefCell::new(None),
         toast_timer: Timer::default(),
+        anim_clock: AnimClock::new(),
+        anim_timer: Timer::default(),
         retry,
     });
     wire_tasks(ui, &shared);
@@ -129,41 +156,6 @@ fn task_item(r: Row) -> TaskItem {
     }
 }
 
-/// Atualiza o modelo no lugar: linhas da mesma tarefa são reaproveitadas para as animações rodarem.
-///
-/// O(n): um mapa id → posição antiga, montado uma vez. Durante a passada o modelo é sempre
-/// `novas[..i]` seguido de `antigas[cursor..]`, então a posição antiga diz quantas linhas descartar.
-/// Quando pouco se aproveita (troca de visão, filtro que corta muitas linhas) o modelo é trocado
-/// de uma vez: inserir/remover linha a linha custa O(n) cada e não há animação a preservar.
-fn sync_rows(model: &VecModel<TaskItem>, rows: Vec<TaskItem>) {
-    /// Acima disso, inserções + remoções viram uma troca do modelo inteiro.
-    const MAX_IN_PLACE_CHANGES: usize = 64;
-    let old: HashMap<i32, usize> = (0..model.row_count()).filter_map(|j| model.row_data(j).map(|r| (r.id, j))).collect();
-    let reused = rows.iter().filter(|r| old.contains_key(&r.id)).count();
-    let changes = (rows.len() - reused) + (old.len() - reused);
-    if reused * 2 < rows.len().max(old.len()) || changes > MAX_IN_PLACE_CHANGES {
-        model.set_vec(rows);
-        return;
-    }
-    let len = rows.len();
-    let mut cursor = 0;
-    for (i, row) in rows.into_iter().enumerate() {
-        match old.get(&row.id).copied().filter(|&j| j >= cursor) {
-            Some(j) => {
-                for _ in cursor..j {
-                    model.remove(i);
-                }
-                cursor = j + 1;
-                model.set_row_data(i, row);
-            }
-            None => model.insert(i, row),
-        }
-    }
-    while model.row_count() > len {
-        model.remove(model.row_count() - 1);
-    }
-}
-
 pub(crate) fn refresh(s: &Shared) {
     let Some(ui) = s.ui.upgrade() else { return };
     let c = s.ctrl.borrow();
@@ -171,7 +163,8 @@ pub(crate) fn refresh(s: &Shared) {
     ui.set_selected_nav(c.selected_nav() as i32);
     ui.set_view_title(c.title().into());
     ui.set_view_subtitle(c.subtitle().into());
-    sync_rows(&s.tasks, c.rows().into_iter().map(task_item).collect());
+    // Linhas da mesma tarefa são reaproveitadas para as animações rodarem.
+    gus_list_slint::sync(&s.tasks, c.rows().into_iter().map(task_item).collect(), |r| r.id);
     ui.set_expanded_id(c.expanded.map_or(-1, |id| id as i32));
     ui.set_selected_id(c.selected.map_or(-1, |id| id as i32));
     ui.set_adding(c.adding);
@@ -255,36 +248,49 @@ pub fn show_writer_event(ui: &AppWindow, event: &WriterEvent) {
 }
 
 pub(crate) fn toggle(s: &Rc<Shared>, id: TaskId) {
-    let done = log_err(s.ctrl.borrow_mut().toggle(id), "concluir tarefa");
+    let now = s.anim_clock.now();
+    let done = log_err(s.ctrl.borrow_mut().toggle(id, now), "concluir tarefa");
     refresh(s);
-    if done != Some(true) {
+    arm_anim(s);
+    if done == Some(true) {
+        show_toast(s, "Tarefa concluída", "Desfazer", TOAST_UNDO);
+    }
+}
+
+pub(crate) fn delete(s: &Rc<Shared>, id: TaskId) {
+    let now = s.anim_clock.now();
+    if !s.ctrl.borrow_mut().begin_delete(id, now) {
         return;
     }
-    show_toast(s, "Tarefa concluída", "Desfazer", TOAST_UNDO);
-    let s1 = s.clone();
-    Timer::single_shot(Duration::from_millis(600), move || {
-        let leaving = s1.ctrl.borrow_mut().start_leaving(id);
-        refresh(&s1);
-        if leaving {
-            let s2 = s1.clone();
-            Timer::single_shot(Duration::from_millis(220), move || update(&s2, |c| c.finish_leaving(id)));
+    refresh(s);
+    arm_anim(s);
+}
+
+/// Arma o timer único das animações para o próximo prazo; sem nada tocando, para.
+/// Um prazo cancelado depois (desfazer) só acorda o timer à toa: `advance` não faz nada.
+fn arm_anim(s: &Rc<Shared>) {
+    let Some(deadline) = s.ctrl.borrow().next_anim_deadline() else {
+        s.anim_timer.stop();
+        return;
+    };
+    let delay = deadline.saturating_sub(s.anim_clock.now());
+    let weak = Rc::downgrade(s);
+    s.anim_timer.start(TimerMode::SingleShot, delay, move || {
+        if let Some(s) = weak.upgrade() {
+            anim_fired(&s, deadline);
         }
     });
 }
 
-pub(crate) fn delete(s: &Rc<Shared>, id: TaskId) {
-    if !s.ctrl.borrow_mut().begin_delete(id) {
-        return;
-    }
+fn anim_fired(s: &Rc<Shared>, deadline: Duration) {
+    s.anim_clock.reached(deadline);
+    let now = s.anim_clock.now();
+    let results = s.ctrl.borrow_mut().advance(now);
     refresh(s);
-    let s1 = s.clone();
-    Timer::single_shot(Duration::from_millis(220), move || {
-        let deleted = log_err(s1.ctrl.borrow_mut().finish_delete(id), "apagar tarefa").is_some();
-        refresh(&s1);
-        if deleted {
-            show_toast(&s1, "Tarefa apagada", "Desfazer", TOAST_UNDO);
-        }
-    });
+    if results.into_iter().filter_map(|r| log_err(r, "apagar tarefa")).count() > 0 {
+        show_toast(s, "Tarefa apagada", "Desfazer", TOAST_UNDO);
+    }
+    arm_anim(s);
 }
 
 /// Crossfade: some (60 ms), troca o conteúdo, reaparece (60 ms). A seleção da sidebar desliza na hora.
@@ -694,6 +700,19 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
 fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     let actions = ui.global::<Actions>();
     {
+        let weak = ui.as_weak();
+        let keymap = keys::keymap();
+        actions.on_key(move |text, ctrl, shift, alt, meta| {
+            let Some(ui) = weak.upgrade() else { return false };
+            let Some(&action) = gus_keys_slint::chord_from_slint(&text, ctrl, shift, alt, meta).and_then(|chord| keymap.lookup(&chord))
+            else {
+                return false;
+            };
+            run_key_action(&ui.global::<Actions>(), action);
+            true
+        });
+    }
+    {
         let s = s.clone();
         actions.on_escape(move || {
             if dialog_open(&s) {
@@ -793,6 +812,24 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     }
 }
 
+/// Dispara o mesmo callback que o markup chamava antes: os handlers não mudam.
+fn run_key_action(actions: &Actions<'_>, action: KeyAction) {
+    match action {
+        KeyAction::NewTask => actions.invoke_new_task(),
+        KeyAction::NewProject => actions.invoke_new_project(),
+        KeyAction::MoveSelection(delta) => actions.invoke_move_selection(delta),
+        KeyAction::ExpandSelected => actions.invoke_expand_selected(),
+        KeyAction::Escape => actions.invoke_escape(),
+        KeyAction::ToggleSelected => actions.invoke_toggle_selected(),
+        KeyAction::DateSelected => actions.invoke_date_selected(),
+        KeyAction::TagSelected => actions.invoke_tag_selected(),
+        KeyAction::DeleteSelected => actions.invoke_delete_selected(),
+        KeyAction::Undo => actions.invoke_undo(),
+        KeyAction::SelectNav(index) => actions.invoke_select_nav(index as i32),
+        KeyAction::ToggleFilter => actions.invoke_toggle_filter(),
+    }
+}
+
 /// Timer alinhado à virada do minuto: recalcula "em 25 min"/"há 10 min", vira o dia e dispara o pulso.
 fn start_clock(s: &Rc<Shared>) -> Rc<Timer> {
     let timer = Rc::new(Timer::default());
@@ -811,10 +848,8 @@ fn start_clock(s: &Rc<Shared>) -> Rc<Timer> {
 fn minute_tick(s: &Rc<Shared>, last: &Cell<NaiveDateTime>) {
     let now = s.ctrl.borrow().store.now();
     let previous = last.replace(now);
-    let pulsed = s.ctrl.borrow_mut().tick(previous);
+    let anim_now = s.anim_clock.now();
+    s.ctrl.borrow_mut().tick(previous, anim_now);
     refresh(s);
-    if !pulsed.is_empty() {
-        let s1 = s.clone();
-        Timer::single_shot(Duration::from_millis(700), move || update(&s1, |c| c.clear_pulse()));
-    }
+    arm_anim(s);
 }

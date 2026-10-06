@@ -11,6 +11,11 @@ description = "Keyboard-first TODO app for the desktop. Local SQLite, no account
 
 [dependencies]
 ray-core = { path = "../core" }
+gus-list = { path = "../gus-list" }
+gus-list-slint = { path = "../gus-list-slint" }
+gus-anim-state = { path = "../gus-anim-state" }
+gus-keys = { path = "../gus-keys" }
+gus-keys-slint = { path = "../gus-keys-slint" }
 slint = "1.18"
 chrono.workspace = true
 tracing.workspace = true

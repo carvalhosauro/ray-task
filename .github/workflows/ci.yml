@@ -75,7 +75,7 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
       # Floor ratchets up only; see CONTRIBUTING.md "Coverage".
-      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info --fail-under-lines 92
+      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info --fail-under-lines 93
       - uses: actions/upload-artifact@v4
         with:
           name: lcov
