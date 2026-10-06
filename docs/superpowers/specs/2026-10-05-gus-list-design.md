@@ -208,3 +208,21 @@ Builds run with `CARGO_BUILD_JOBS=2`, one at a time.
 4. Add `crates/gus-list-slint` with `sync` and its tests; replace `bind::sync_rows`.
 5. Register both crates in the workspace and `release-plz.toml`; run the full test suite and
    the manual app check.
+
+## Roadmap: next GusStack crates
+
+`gus-list` is the first of a family of headless crates extracted from ray-task. The next
+three are listed below. Each one gets its own brainstorm → spec → plan cycle and follows the
+same rules as `gus-list`: std only (adapters in separate `-slint` crates), pure functions or
+small plain data types, dogfooded in ray-task before any generalisation.
+
+| Crate | What it is | Where ray-task does it by hand today |
+|---|---|---|
+| `gus-anim-state` | Per-key lifecycle for rows that animate: fresh → present → lingering → leaving → gone, plus transient flags (pulse). The app drives time; the crate answers "which keys are in which phase" and "which keys must stay visible". | `Controller` sets `fresh`, `lingering`, `leaving`, `pulsing` and their transitions in `start_leaving` / `finish_leaving` / `begin_delete` / `tick` (`crates/app-slint/src/controller.rs`) |
+| `gus-undo` | Generic undo stack whose entries can become stale: `undo` pops until it finds an entry that still applies, discarding the rest; entries can be rewritten in place when the world changes (e.g. a deleted tag). | `Store::undo` and the `UndoEntry` fix-ups in `delete_tag` (`crates/core/src/store.rs`); the "re-select the restored task" rule in `Controller::undo` |
+| `gus-keys` | Keymap (key + modifiers → action) and a layered dismiss stack: Esc closes the topmost open layer, one per press. | `Controller::escape` (capture → popover → expanded task → filter → selection) and the `key-pressed` handler in `crates/app-slint/ui/app.slint` |
+
+Suggested order: `gus-anim-state` first (it feeds `gus-list`'s visible rows and owns the
+"keep" set), then `gus-undo`, then `gus-keys`. `gus-keys` comes last because key events are
+handled in Slint markup today, so adopting it means forwarding key events to Rust — a bigger
+change to ray-task than the other two.
