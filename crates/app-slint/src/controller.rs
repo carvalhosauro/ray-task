@@ -1,6 +1,8 @@
 use std::collections::HashSet;
+use std::time::Duration;
 
 use chrono::{Days, NaiveDate, NaiveDateTime};
+use gus_anim_state::Timeline;
 use ray_core::{matches_query, DomainError, Due, ProjectId, Store, TagId, Task, TaskId, View, WriteOp, PROJECT_COLORS};
 
 use crate::present::{self, CalDay, Tone};
@@ -65,6 +67,20 @@ enum Section {
     Done,
 }
 
+/// Saída animada de uma linha. `Deleting` apaga a tarefa do store quando termina.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Exit {
+    Lingering,
+    Leaving,
+    Deleting,
+}
+
+/// Concluída: fica visível um instante, depois sai.
+const COMPLETE_SCRIPT: [(Exit, Duration); 2] = [(Exit::Lingering, Duration::from_millis(600)), (Exit::Leaving, Duration::from_millis(220))];
+const DELETE_SCRIPT: [(Exit, Duration); 1] = [(Exit::Deleting, Duration::from_millis(220))];
+/// A hora da tarefa chegou: a linha pulsa uma vez.
+const PULSE_SCRIPT: [((), Duration); 1] = [((), Duration::from_millis(700))];
+
 pub struct Controller {
     pub store: Store,
     persist: Box<dyn FnMut(Vec<WriteOp>)>,
@@ -79,9 +95,8 @@ pub struct Controller {
     pub fresh: Option<TaskId>,
     pub popover_task: Option<TaskId>,
     pub popover_month: NaiveDate,
-    lingering: HashSet<TaskId>,
-    leaving: HashSet<TaskId>,
-    pulsing: HashSet<TaskId>,
+    exits: Timeline<TaskId, Exit>,
+    pulses: Timeline<TaskId, ()>,
     /// Tarefas apagadas nesta sessão: o desfazer que as restaura volta a selecioná-las.
     deleted: HashSet<TaskId>,
 }
@@ -102,9 +117,8 @@ impl Controller {
             fresh: None,
             popover_task: None,
             popover_month,
-            lingering: HashSet::new(),
-            leaving: HashSet::new(),
-            pulsing: HashSet::new(),
+            exits: Timeline::new(),
+            pulses: Timeline::new(),
             deleted: HashSet::new(),
         }
     }
@@ -121,7 +135,7 @@ impl Controller {
     /// Tarefa aparece na visão atual (o filtro de texto não conta: editar o título não fecha a tarefa).
     fn in_view(&self, id: TaskId) -> bool {
         let Some(task) = self.store.task(id) else { return false };
-        if self.lingering.contains(&id) || self.leaving.contains(&id) {
+        if self.exits.phase(&id).is_some() {
             return true;
         }
         let today = self.store.today();
@@ -193,7 +207,11 @@ impl Controller {
     }
 
     fn keep(&self) -> HashSet<TaskId> {
-        self.lingering.union(&self.leaving).copied().collect()
+        self.exits.keys().copied().collect()
+    }
+
+    fn is_leaving(&self, id: TaskId) -> bool {
+        matches!(self.exits.phase(&id), Some(Exit::Leaving | Exit::Deleting))
     }
 
     /// Tarefas visíveis, na ordem da lista: as da visão (com o filtro de texto) e, num projeto com
@@ -242,8 +260,8 @@ impl Controller {
             title: task.title.clone(),
             notes: task.notes.clone(),
             done: task.is_done(),
-            leaving: self.leaving.contains(&task.id),
-            pulse: self.pulsing.contains(&task.id),
+            leaving: self.is_leaving(task.id),
+            pulse: self.pulses.phase(&task.id).is_some(),
             fresh: self.fresh == Some(task.id),
             group_header: group.0,
             group_sub: group.1,
@@ -356,7 +374,7 @@ impl Controller {
 
     pub fn move_selection(&mut self, delta: i32) {
         let keys: Vec<TaskId> = self.visible(&self.keep()).iter().map(|t| t.id).collect();
-        self.selected = gus_list::step(&keys, self.selected.as_ref(), delta as isize, |id| !self.leaving.contains(id)).copied();
+        self.selected = gus_list::step(&keys, self.selected.as_ref(), delta as isize, |id| !self.is_leaving(*id)).copied();
     }
 
     /// Esc fecha uma camada por vez: captura → popover → tarefa aberta → filtro → seleção.
@@ -415,65 +433,75 @@ impl Controller {
         Ok(())
     }
 
-    /// Retorna `true` se ficou concluída (a linha fica visível até `start_leaving`/`finish_leaving`).
-    pub fn toggle(&mut self, id: TaskId) -> Result<bool, DomainError> {
+    /// Retorna `true` se ficou concluída (a linha fica visível até o fim da animação de saída).
+    pub fn toggle(&mut self, id: TaskId, now: Duration) -> Result<bool, DomainError> {
         let done = self.store.toggle_complete(id)?;
-        if done {
-            self.lingering.insert(id);
-        } else {
-            self.lingering.remove(&id);
-            self.leaving.remove(&id);
+        // Apagar vence: alternar durante a animação de apagar não desfaz o apagar.
+        if self.exits.phase(&id) != Some(&Exit::Deleting) {
+            if done {
+                self.exits.play(id, &COMPLETE_SCRIPT, now);
+            } else {
+                self.exits.cancel(&id);
+            }
         }
         self.flush();
         Ok(done)
     }
 
-    /// 600 ms após concluir. `false` se a conclusão foi desfeita nesse meio tempo.
-    pub fn start_leaving(&mut self, id: TaskId) -> bool {
-        let still_done = self.lingering.contains(&id) && self.store.task(id).is_some_and(|t| t.is_done());
-        if still_done {
-            self.leaving.insert(id);
-        } else {
-            self.lingering.remove(&id);
-        }
-        still_done
-    }
-
-    pub fn finish_leaving(&mut self, id: TaskId) {
-        self.lingering.remove(&id);
-        self.leaving.remove(&id);
-        if self.expanded == Some(id) {
-            self.expanded = None;
-        }
-        if self.selected == Some(id) {
-            self.selected = None;
-        }
-    }
-
-    pub fn begin_delete(&mut self, id: TaskId) -> bool {
+    pub fn begin_delete(&mut self, id: TaskId, now: Duration) -> bool {
         if self.store.task(id).is_none() {
             return false;
         }
-        self.leaving.insert(id);
+        self.exits.play(id, &DELETE_SCRIPT, now);
         true
     }
 
-    pub fn finish_delete(&mut self, id: TaskId) -> Result<(), DomainError> {
-        self.finish_leaving(id);
-        self.store.delete_task(id)?;
-        self.deleted.insert(id);
-        self.flush();
-        Ok(())
+    /// Avança as animações até `now`. Cada item é uma tarefa que terminou de sair apagando:
+    /// `Ok` se foi apagada (o desfazer a restaura), `Err` se o store recusou.
+    pub fn advance(&mut self, now: Duration) -> Vec<Result<TaskId, DomainError>> {
+        self.pulses.advance(now);
+        let mut deleted = Vec::new();
+        for change in self.exits.advance(now) {
+            if change.to.is_some() {
+                continue;
+            }
+            let id = change.key;
+            if self.expanded == Some(id) {
+                self.expanded = None;
+            }
+            if self.selected == Some(id) {
+                self.selected = None;
+            }
+            if change.from == Exit::Deleting {
+                deleted.push(self.store.delete_task(id).map(|()| {
+                    self.deleted.insert(id);
+                    id
+                }));
+            }
+        }
+        if !deleted.is_empty() {
+            self.flush();
+        }
+        deleted
+    }
+
+    /// Próximo prazo de qualquer animação (o binding arma um único timer para ele).
+    pub fn next_anim_deadline(&self) -> Option<Duration> {
+        self.exits.next_deadline().into_iter().chain(self.pulses.next_deadline()).min()
     }
 
     pub fn undo(&mut self) -> bool {
         let undone = self.store.undo();
         if undone {
-            let stale: Vec<TaskId> =
-                self.lingering.iter().copied().filter(|id| !self.store.task(*id).is_some_and(|t| t.is_done())).collect();
+            // Conclusão desfeita no meio da saída: a linha fica. Quem está sendo apagada segue.
+            let stale: Vec<TaskId> = self
+                .exits
+                .keys()
+                .copied()
+                .filter(|id| self.exits.phase(id) != Some(&Exit::Deleting) && !self.store.task(*id).is_some_and(|t| t.is_done()))
+                .collect();
             for id in stale {
-                self.lingering.remove(&id);
-                self.leaving.remove(&id);
+                self.exits.cancel(&id);
             }
             // Tarefa apagada que voltou: fica selecionada para o teclado continuar dela.
             let restored = self.deleted.iter().copied().find(|id| self.store.task(*id).is_some());
@@ -613,8 +641,8 @@ impl Controller {
 
     // ---------- relógio ----------
 
-    /// Chamado a cada minuto. Retorna as tarefas cuja hora chegou desde `previous` (para o pulso).
-    pub fn tick(&mut self, previous: NaiveDateTime) -> Vec<TaskId> {
+    /// Chamado a cada minuto. Retorna as tarefas cuja hora chegou desde `previous` (elas pulsam).
+    pub fn tick(&mut self, previous: NaiveDateTime, anim_now: Duration) -> Vec<TaskId> {
         let now = self.store.now();
         self.drop_stale_focus(); // a virada do dia tira tarefas de Próximos
         if previous.date() != now.date() {
@@ -627,11 +655,9 @@ impl Controller {
             .filter(|t| t.due.is_some_and(|d| d.date == now.date() && d.time.is_some_and(|tm| tm > previous.time() && tm <= now.time())))
             .map(|t| t.id)
             .collect();
-        self.pulsing.extend(due_now.iter().copied());
+        for id in &due_now {
+            self.pulses.play(*id, &PULSE_SCRIPT, anim_now);
+        }
         due_now
-    }
-
-    pub fn clear_pulse(&mut self) {
-        self.pulsing.clear();
     }
 }

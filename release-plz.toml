@@ -26,3 +26,18 @@ git_tag_enable = false
 name = "gus-list-slint"
 changelog_update = false
 git_tag_enable = false
+
+[[package]]
+name = "gus-anim-state"
+changelog_update = false
+git_tag_enable = false
+
+[[package]]
+name = "gus-keys"
+changelog_update = false
+git_tag_enable = false
+
+[[package]]
+name = "gus-keys-slint"
+changelog_update = false
+git_tag_enable = false

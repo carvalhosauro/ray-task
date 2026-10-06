@@ -28,6 +28,8 @@ export global Actions {
     in-out property <int> focus-title-task: -1;
     in-out property <int> focus-title-handled: 0;
     // teclado e filtro
+    // Atalho global: texto + modificadores do evento → `true` se havia ação para ele.
+    callback key(string, bool, bool, bool, bool) -> bool;
     callback escape();
     callback move-selection(int);
     callback expand-selected();

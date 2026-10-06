@@ -1,0 +1,9 @@
+[package]
+name = "gus-anim-state"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+description = "Headless animation timing: per-key scripts of timed phases, advanced by the app."
