@@ -136,6 +136,12 @@ Binaries are not code-signed yet.
 
 Before a schema migration, ray-task copies the database to `ray-task.db.bak`. Back up that one file and you have backed up everything.
 
+## Privacy
+
+ray-task never sends your tasks anywhere. Once a day it asks GitHub's public API for the latest
+release version (`api.github.com/repos/carvalhosauro/ray-task/releases/latest`); nothing else is
+sent. Turn it off in **Configurações › Atualizações › Verificar automaticamente**.
+
 ## Build from source
 
 Linux needs Slint's system libraries:
