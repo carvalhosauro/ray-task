@@ -3,11 +3,27 @@ use std::time::Duration;
 
 use chrono::{Days, NaiveDate, NaiveDateTime};
 use gus_anim_state::Timeline;
-use ray_core::{matches_query, DomainError, Due, ProjectId, Store, TagId, Task, TaskId, View, WriteOp, PROJECT_COLORS};
+pub use gus_combobox::Nav;
+use gus_combobox::{Combobox, Outcome};
+use ray_core::{matches_query, DomainError, Due, ProjectId, Store, Tag, TagId, Task, TaskId, View, WriteOp, PROJECT_COLORS};
 
 use crate::present::{self, CalDay, Tone};
 
 const INBOX_COLOR: &str = "#8E8E93";
+/// Linhas da lista de sugestões do campo de tag.
+const MAX_TAG_OPTIONS: usize = 6;
+
+/// Resultado de uma tecla no campo de tag: `handled` = consumida; `text` = novo conteúdo do campo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagKey {
+    pub handled: bool,
+    pub text: String,
+}
+
+/// O que o usuário digitou, sem espaços nem o `#` do começo.
+fn tag_query(query: &str) -> &str {
+    query.trim().trim_start_matches('#')
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
@@ -97,6 +113,8 @@ pub struct Controller {
     pub popover_month: NaiveDate,
     exits: Timeline<TaskId, Exit>,
     pulses: Timeline<TaskId, ()>,
+    /// Lista de sugestões do campo de tag com foco (só um por vez).
+    tag_combo: Combobox,
     /// Tarefas apagadas nesta sessão: o desfazer que as restaura volta a selecioná-las.
     deleted: HashSet<TaskId>,
 }
@@ -119,6 +137,7 @@ impl Controller {
             popover_month,
             exits: Timeline::new(),
             pulses: Timeline::new(),
+            tag_combo: Combobox::default(),
             deleted: HashSet::new(),
         }
     }
@@ -317,20 +336,79 @@ impl Controller {
         self.store.task(id).is_some_and(|t| t.project_id != to && !t.tags.is_empty())
     }
 
-    pub fn tag_suggestion(&self, id: TaskId, prefix: &str) -> String {
-        let prefix = prefix.trim().trim_start_matches('#').to_lowercase();
-        let Some(task) = self.store.task(id) else { return String::new() };
-        let Some(project_id) = task.project_id else { return String::new() };
-        if prefix.is_empty() {
-            return String::new();
-        }
-        self.store
-            .project_tags(project_id)
+    /// Tags do projeto que a tarefa ainda não tem, na ordem da lista: as que começam com o texto,
+    /// depois as que o contêm.
+    pub fn tag_options(&self, id: TaskId, query: &str) -> Vec<String> {
+        let Some(task) = self.store.task(id) else { return Vec::new() };
+        let Some(project_id) = task.project_id else { return Vec::new() };
+        let free: Vec<&Tag> = self.store.project_tags(project_id).into_iter().filter(|t| !task.tags.contains(&t.id)).collect();
+        gus_combobox::matches(free.iter().copied(), tag_query(query), |t| t.name.as_str())
             .into_iter()
-            .filter(|t| !task.tags.contains(&t.id))
-            .find(|t| t.name.to_lowercase().starts_with(&prefix))
+            .take(MAX_TAG_OPTIONS)
             .map(|t| t.name.clone())
-            .unwrap_or_default()
+            .collect()
+    }
+
+    /// Sugestão em cinza (Tab completa): a primeira tag que começa com o texto.
+    pub fn tag_suggestion(&self, id: TaskId, prefix: &str) -> String {
+        let options = self.tag_options(id, prefix);
+        Self::tag_completion(&options, prefix).map(|i| options[i].clone()).unwrap_or_default()
+    }
+
+    fn tag_completion(options: &[String], query: &str) -> Option<usize> {
+        let refs: Vec<&String> = options.iter().collect();
+        gus_combobox::completion(&refs, tag_query(query), |s| s.as_str())
+    }
+
+    pub fn tag_focus(&mut self, focused: bool) {
+        if focused {
+            self.tag_combo.open();
+        } else {
+            self.tag_combo.close();
+        }
+    }
+
+    pub fn tag_input(&mut self) {
+        self.tag_combo.input();
+    }
+
+    pub fn tag_highlighted(&self) -> Option<usize> {
+        self.tag_combo.highlighted()
+    }
+
+    pub fn tag_list_open(&self) -> bool {
+        self.tag_combo.is_open()
+    }
+
+    /// Uma tecla no campo de tag com o texto `query`. Enter sem item destacado usa o texto (como
+    /// sempre foi); ↓ / ↑ escolhem na lista; Tab completa; Esc fecha a lista antes de fechar a tarefa.
+    pub fn tag_key(&mut self, id: TaskId, query: &str, nav: Nav) -> Result<TagKey, DomainError> {
+        let options = self.tag_options(id, query);
+        let completion = Self::tag_completion(&options, query);
+        let keep = |handled| TagKey { handled, text: query.to_string() };
+        let cleared = TagKey { handled: true, text: String::new() };
+        Ok(match self.tag_combo.key(nav, options.len(), completion) {
+            Outcome::Ignored => keep(false),
+            Outcome::Moved | Outcome::Closed => keep(true),
+            Outcome::Complete(i) => TagKey { handled: true, text: options[i].clone() },
+            Outcome::Pick(i) => {
+                self.add_tag_by_name(id, &options[i])?;
+                cleared
+            }
+            Outcome::UseText => {
+                if !tag_query(query).is_empty() {
+                    self.add_tag_by_name(id, query)?;
+                }
+                cleared
+            }
+        })
+    }
+
+    /// Clique numa linha da lista.
+    pub fn tag_pick(&mut self, id: TaskId, name: &str) -> Result<(), DomainError> {
+        self.add_tag_by_name(id, name)?;
+        self.tag_combo.close();
+        Ok(())
     }
 
     pub fn calendar(&self) -> (String, Vec<CalDay>) {

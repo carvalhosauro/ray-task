@@ -3694,6 +3694,7 @@ dependencies = [
  "chrono",
  "dirs",
  "gus-anim-state",
+ "gus-combobox",
  "gus-keys",
  "gus-keys-slint",
  "gus-list",
