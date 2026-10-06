@@ -16,3 +16,8 @@ git_tag_name = "v{{ version }}"
 name = "ray-core"
 changelog_update = false
 git_tag_enable = false
+
+[[package]]
+name = "gus-list"
+changelog_update = false
+git_tag_enable = false
