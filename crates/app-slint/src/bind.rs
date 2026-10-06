@@ -8,6 +8,7 @@ use ray_core::{DomainError, TaskId, View};
 use slint::{Color, ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
 
 use crate::controller::{Controller, NavRow, QuickDate, Row};
+use crate::keys::{self, KeyAction};
 use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TaskItem};
 
 pub const TOAST_UNDO: i32 = 0;
@@ -699,6 +700,19 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
 fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     let actions = ui.global::<Actions>();
     {
+        let weak = ui.as_weak();
+        let keymap = keys::keymap();
+        actions.on_key(move |text, ctrl, shift, alt, meta| {
+            let Some(ui) = weak.upgrade() else { return false };
+            let Some(&action) = gus_keys_slint::chord_from_slint(&text, ctrl, shift, alt, meta).and_then(|chord| keymap.lookup(&chord))
+            else {
+                return false;
+            };
+            run_key_action(&ui.global::<Actions>(), action);
+            true
+        });
+    }
+    {
         let s = s.clone();
         actions.on_escape(move || {
             if dialog_open(&s) {
@@ -795,6 +809,24 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_filter_changed(move |text| update(&s, |c| c.set_filter(&text)));
+    }
+}
+
+/// Dispara o mesmo callback que o markup chamava antes: os handlers não mudam.
+fn run_key_action(actions: &Actions<'_>, action: KeyAction) {
+    match action {
+        KeyAction::NewTask => actions.invoke_new_task(),
+        KeyAction::NewProject => actions.invoke_new_project(),
+        KeyAction::MoveSelection(delta) => actions.invoke_move_selection(delta),
+        KeyAction::ExpandSelected => actions.invoke_expand_selected(),
+        KeyAction::Escape => actions.invoke_escape(),
+        KeyAction::ToggleSelected => actions.invoke_toggle_selected(),
+        KeyAction::DateSelected => actions.invoke_date_selected(),
+        KeyAction::TagSelected => actions.invoke_tag_selected(),
+        KeyAction::DeleteSelected => actions.invoke_delete_selected(),
+        KeyAction::Undo => actions.invoke_undo(),
+        KeyAction::SelectNav(index) => actions.invoke_select_nav(index as i32),
+        KeyAction::ToggleFilter => actions.invoke_toggle_filter(),
     }
 }
 

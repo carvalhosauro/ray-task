@@ -227,3 +227,9 @@ Suggested order: `gus-anim-state` first (it feeds `gus-list`'s visible rows and 
 "keep" set), then `gus-undo`, then `gus-keys`. `gus-keys` comes last because key events are
 handled in Slint markup today, so adopting it means forwarding key events to Rust — a bigger
 change to ray-task than the other two.
+
+**Update (2026-10-05):** `gus-anim-state` shipped (PR #6, spec
+`2026-10-05-gus-anim-state-design.md`). `gus-undo` is **deferred**: the generic part of
+ray-core's undo (bounded stack, skip stale entries, retain / fix-up) is about 40 lines, which
+does not pay for a crate. Reconsider when ray-task wants redo (`Ctrl+Shift+Z`, a new feature)
+or a second app needs undo. `gus-keys` comes next (spec `2026-10-05-gus-keys-design.md`).

@@ -1,0 +1,13 @@
+[package]
+name = "gus-keys-slint"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+description = "Turns Slint key events into gus-keys chords."
+
+[dependencies]
+gus-keys = { path = "../gus-keys" }
+slint = "1.18"
