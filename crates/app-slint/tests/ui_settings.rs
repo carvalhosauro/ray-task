@@ -108,3 +108,19 @@ fn update_check_switch_persists() {
     click(&ui, "Verificar automaticamente");
     assert!(!binding.controller().store.settings().update_check);
 }
+
+#[test]
+fn search_button_on_settings_goes_back_to_the_list_with_the_filter_open() {
+    i_slint_backend_testing::init_no_event_loop();
+    let store = Store::new(Snapshot::default(), Box::new(FixedClock::at("2026-10-05 13:35")));
+    let ui = AppWindow::new().unwrap();
+    let _binding = bind::bind(&ui, Controller::new(store, Box::new(|_| {})), Box::new(|| {}));
+    ui.show().unwrap();
+    ui.global::<Actions>().invoke_open_settings();
+    ms(100);
+    // o botão "Buscar" da barra lateral chama toggle-filter
+    ui.global::<Actions>().invoke_toggle_filter();
+    ms(100);
+    assert_eq!(ui.get_page(), 0, "sai das configurações em vez de filtrar a lista escondida");
+    assert!(ui.get_filter_visible());
+}

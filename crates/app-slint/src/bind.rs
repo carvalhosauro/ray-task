@@ -904,11 +904,22 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     }
     {
         let s = s.clone();
-        actions.on_toggle_help(move || update(&s, |c| c.toggle_help()));
+        actions.on_toggle_help(move || {
+            update(&s, |c| c.toggle_help());
+            // Overlay aberto a partir de um campo de texto: o teclado sai do campo de trás.
+            if let Some(ui) = s.ui.upgrade() {
+                ui.invoke_focus_root();
+            }
+        });
     }
     {
         let s = s.clone();
         actions.on_escape(move || {
+            // O overlay fica por cima de tudo, inclusive de um diálogo: fecha primeiro.
+            if s.ctrl.borrow().help_open {
+                update(&s, |c| c.escape());
+                return;
+            }
             if dialog_open(&s) {
                 close_dialogs(&s);
                 return;
@@ -992,6 +1003,17 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_toggle_filter(move || {
+            // "Buscar" nas configurações: volta para a lista já com o filtro aberto, em vez de
+            // abrir um campo invisível que filtraria a lista escondida.
+            if s.ctrl.borrow().page == Page::Settings {
+                crossfade(&s, |c| {
+                    c.page = Page::Tasks;
+                    if !c.filter_open {
+                        c.toggle_filter();
+                    }
+                });
+                return;
+            }
             update(&s, |c| c.toggle_filter());
             if let Some(ui) = s.ui.upgrade() {
                 if !ui.get_filter_visible() {

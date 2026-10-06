@@ -69,3 +69,29 @@ fn settings_page_lists_the_shortcuts() {
     let rows: Vec<_> = ElementHandle::find_by_accessible_label(&ui, "Ctrl+N").collect();
     assert_eq!(rows.len(), 1, "linha Ctrl+N na seção Atalhos");
 }
+
+#[test]
+fn overlay_opened_from_a_text_field_takes_the_keyboard() {
+    let (ui, binding) = setup();
+    ctrl(&ui, "f");
+    ms(50);
+    tap(&ui, Key::F1);
+    assert!(ui.get_help_open());
+    tap(&ui, "x");
+    assert_eq!(binding.controller().filter, "", "digitar com o overlay aberto não edita o campo de trás");
+    tap(&ui, "?");
+    assert!(!ui.get_help_open(), "? fecha o overlay");
+}
+
+#[test]
+fn esc_closes_the_overlay_before_a_dialog_under_it() {
+    let (ui, _binding) = setup();
+    ui.global::<ray_task::Actions>().invoke_new_project();
+    ms(50);
+    assert!(ui.get_prompt_visible());
+    tap(&ui, Key::F1);
+    assert!(ui.get_help_open());
+    tap(&ui, Key::Escape);
+    assert!(!ui.get_help_open());
+    assert!(ui.get_prompt_visible(), "o prompt (e o que foi digitado) continua");
+}
