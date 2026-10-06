@@ -2,12 +2,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ray_core::{FixedClock, Snapshot, Store, ThemeMode, View, WriteOp};
-use ray_task::controller::{Controller, Page, QuickDate};
+use ray_task::controller::{CheckStatus, Controller, Page, QuickDate};
 use ray_task::controller::{Nav, TagKey};
 use ray_task::keys::KeyAction;
 use ray_task::present::Tone;
+use ray_task::update::{Release, UpdateError};
+use semver::Version;
 
 struct Fixture {
     c: Controller,
@@ -771,4 +773,98 @@ fn only_escape_and_help_work_while_help_is_open() {
     assert!(!f.c.key_allowed(KeyAction::SelectNav(0)));
     assert!(!f.c.key_allowed(KeyAction::OpenSettings));
     assert!(!f.c.key_allowed(KeyAction::NewTask));
+}
+
+fn release(version: &str) -> Release {
+    Release {
+        version: Version::parse(version).unwrap(),
+        url: format!("https://github.com/carvalhosauro/ray-task/releases/tag/v{version}"),
+        notes: String::new(),
+    }
+}
+
+fn utc(s: &str) -> DateTime<Utc> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap().and_utc()
+}
+
+fn on_v010() -> Fixture {
+    let mut f = at("2026-10-06 10:00");
+    f.c.current_version = Version::new(0, 1, 0);
+    f
+}
+
+#[test]
+fn successful_check_shows_a_newer_release_and_records_the_time() {
+    let mut f = on_v010();
+    assert!(f.c.begin_check(false, utc("2026-10-06 10:00")));
+    assert_eq!(f.c.check, CheckStatus::Checking);
+    f.c.finish_check(Ok(release("0.2.0")));
+    assert_eq!(f.c.check, CheckStatus::Available);
+    assert_eq!(f.c.update_notice().map(|r| r.version.to_string()), Some("0.2.0".into()));
+    assert_eq!(f.c.check_status_text(), "Versão 0.2.0 disponível");
+    assert!(f.c.store.settings().update_last_check.is_some());
+    assert!(f.sent.borrow().iter().any(|op| matches!(op, WriteOp::SetSetting { key: "update_last_check", .. })));
+}
+
+#[test]
+fn same_version_is_up_to_date() {
+    let mut f = on_v010();
+    assert!(f.c.begin_check(true, utc("2026-10-06 10:00")));
+    f.c.finish_check(Ok(release("0.1.0")));
+    assert_eq!(f.c.check, CheckStatus::UpToDate);
+    assert!(f.c.update_notice().is_none());
+    assert_eq!(f.c.check_status_text(), "Você está na versão mais recente");
+}
+
+#[test]
+fn failures_are_silent_for_automatic_checks_and_visible_for_manual_ones() {
+    let mut f = on_v010();
+    assert!(f.c.begin_check(false, utc("2026-10-06 10:00")));
+    f.c.finish_check(Err(UpdateError::Network("offline".into())));
+    assert_eq!(f.c.check, CheckStatus::Idle);
+    assert_eq!(f.c.check_status_text(), "");
+    assert!(f.c.store.settings().update_last_check.is_none(), "falha não conta como verificado");
+
+    assert!(f.c.begin_check(true, utc("2026-10-06 10:00")));
+    f.c.finish_check(Err(UpdateError::Network("offline".into())));
+    assert_eq!(f.c.check, CheckStatus::Failed);
+    assert_eq!(f.c.check_status_text(), "Não foi possível verificar");
+}
+
+#[test]
+fn one_check_at_a_time_and_stale_responses_are_ignored() {
+    let mut f = on_v010();
+    assert!(f.c.begin_check(false, utc("2026-10-06 10:00")));
+    assert!(!f.c.begin_check(true, utc("2026-10-06 10:00")), "já há uma em andamento");
+    f.c.finish_check(Ok(release("0.1.0")));
+    f.c.finish_check(Ok(release("0.2.0")));
+    assert!(f.c.update_notice().is_none(), "resposta sem verificação em andamento é ignorada");
+}
+
+#[test]
+fn automatic_check_respects_the_daily_window_and_the_toggle() {
+    let mut f = on_v010();
+    assert!(f.c.begin_check(false, utc("2026-10-06 10:00")));
+    f.c.finish_check(Ok(release("0.1.0")));
+    assert!(!f.c.begin_check(false, utc("2026-10-06 16:00")), "menos de 24 h");
+    assert!(f.c.begin_check(true, utc("2026-10-06 16:00")), "manual ignora a janela");
+    f.c.finish_check(Ok(release("0.1.0")));
+    f.c.set_update_check(false);
+    assert!(!f.c.begin_check(false, utc("2026-10-09 10:00")));
+}
+
+#[test]
+fn dismissing_hides_the_notice_until_a_greater_version() {
+    let mut f = on_v010();
+    f.c.begin_check(true, utc("2026-10-06 10:00"));
+    f.c.finish_check(Ok(release("0.2.0")));
+    f.c.dismiss_update();
+    assert!(f.c.update_notice().is_none());
+    assert_eq!(f.c.store.settings().update_dismissed.as_deref(), Some("0.2.0"));
+    f.c.begin_check(true, utc("2026-10-07 10:00"));
+    f.c.finish_check(Ok(release("0.2.0")));
+    assert!(f.c.update_notice().is_none());
+    f.c.begin_check(true, utc("2026-10-08 10:00"));
+    f.c.finish_check(Ok(release("0.3.0")));
+    assert_eq!(f.c.update_notice().map(|r| r.version.to_string()), Some("0.3.0".into()));
 }
