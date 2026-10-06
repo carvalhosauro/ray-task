@@ -1,4 +1,4 @@
-use ray_core::{FixedClock, Snapshot, Store, View, WriteOp};
+use ray_core::{FixedClock, Snapshot, Store, ThemeMode, View, WriteOp};
 
 fn store() -> Store {
     Store::new(Snapshot::default(), Box::new(FixedClock::at("2026-10-05 13:35")))
@@ -99,4 +99,25 @@ fn undo_drops_tags_deleted_in_the_meantime() {
     s.delete_tag(tag).unwrap();
     assert!(s.undo());
     assert!(s.task(t).unwrap().tags.is_empty());
+}
+
+#[test]
+fn settings_are_not_undoable() {
+    let mut store = store();
+    let id = store.create_task(View::Inbox, "A").unwrap();
+    store.delete_task(id).unwrap();
+    store.set_theme(ThemeMode::Dark);
+    assert!(store.undo(), "desfaz o apagar, não o tema");
+    assert!(store.task(id).is_some());
+    assert_eq!(store.settings().theme, ThemeMode::Dark);
+    assert!(!store.undo());
+}
+
+#[test]
+fn setting_the_same_value_writes_nothing() {
+    let mut store = store();
+    store.take_ops();
+    store.set_theme(ThemeMode::System);
+    store.set_update_check(true);
+    assert!(store.take_ops().is_empty());
 }
