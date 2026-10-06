@@ -1,3 +1,4 @@
+use i_slint_backend_testing::ElementHandle;
 use ray_core::{FixedClock, Snapshot, Store};
 use ray_task::bind;
 use ray_task::controller::Controller;
@@ -50,4 +51,27 @@ fn foreign_url_is_treated_as_a_failure() {
     actions.invoke_update_response(true, json.into());
     assert_eq!(ui.global::<Prefs>().get_notice_version(), "");
     assert_eq!(ui.global::<Prefs>().get_update_status(), "Não foi possível verificar");
+}
+
+#[test]
+fn notice_appears_in_the_sidebar_and_can_be_dismissed() {
+    let (ui, binding) = setup();
+    ui.show().unwrap();
+    let actions = ui.global::<Actions>();
+    assert_eq!(ElementHandle::find_by_accessible_label(&ui, "v0.2.0 disponível").count(), 0);
+
+    actions.invoke_check_updates();
+    actions.invoke_update_response(true, FIXTURE.into());
+    assert_eq!(ElementHandle::find_by_accessible_label(&ui, "v0.2.0 disponível").count(), 1);
+
+    actions.invoke_dismiss_update();
+    assert_eq!(ui.global::<Prefs>().get_notice_version(), "");
+    assert_eq!(ElementHandle::find_by_accessible_label(&ui, "v0.2.0 disponível").count(), 0);
+    assert_eq!(binding.controller().store.settings().update_dismissed.as_deref(), Some("0.2.0"));
+}
+
+#[test]
+fn install_command_is_exposed_to_the_ui() {
+    let (ui, _binding) = setup();
+    assert_eq!(ui.global::<Prefs>().get_install_command(), ray_task::update::install_command());
 }

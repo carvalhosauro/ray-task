@@ -74,6 +74,8 @@ export global Actions {
     callback check-updates();
     // resposta da busca (thread de rede): ok + corpo JSON, ou erro
     callback update-response(bool, string);
+    callback open-release();
+    callback dismiss-update();
 }
 
 // Estado das configurações e do aviso de atualização (preenchido pelo Rust).

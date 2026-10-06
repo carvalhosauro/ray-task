@@ -413,6 +413,22 @@ fn wire_settings(ui: &AppWindow, s: &Rc<Shared>) {
             update(&s, |c| c.finish_check(result));
         });
     }
+    {
+        let s = s.clone();
+        actions.on_open_release(move || {
+            let url = s.ctrl.borrow().update_notice().map(|r| r.url.clone());
+            if let Some(url) = url {
+                // URL já validada em update::parse_release (só a página de releases do projeto).
+                if let Err(error) = open::that_detached(&url) {
+                    tracing::warn!(%error, %url, "abrir release no navegador");
+                }
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_dismiss_update(move || update(&s, |c| c.dismiss_update()));
+    }
 }
 
 /// Começa uma verificação (se o controller deixar) e busca numa thread; a resposta volta pelo
