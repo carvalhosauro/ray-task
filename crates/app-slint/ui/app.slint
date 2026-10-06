@@ -5,7 +5,7 @@ import "../assets/fonts/Inter-Bold.ttf";
 import { Theme } from "theme.slint";
 import { NavItem, TaskItem } from "types.slint";
 import { Actions, Picker } from "globals.slint";
-import { Icon, IconButton, Dialog, DialogButton } from "components.slint";
+import { Icon, IconButton, Dialog, DialogButton, MenuPanel } from "components.slint";
 import { Sidebar } from "sidebar.slint";
 import { TaskRow } from "task_row.slint";
 export { Actions, Picker } from "globals.slint";
@@ -164,6 +164,39 @@ component FilterField inherits Rectangle {
                 edited => { Actions.filter-changed(self.text); }
             }
             if input.text == "" : Text { x: 0px; text: "Filtrar"; font-size: 13px; color: Theme.faint; vertical-alignment: center; }
+        }
+    }
+}
+
+/// Lista de sugestões do campo de tag: abaixo do campo, ou acima se não couber na janela.
+component TagList inherits MenuPanel {
+    in property <length> window-height;
+    property <length> row-height: 26px;
+    property <length> field-height: 28px;
+    x: Actions.tag-anchor-x;
+    y: Actions.tag-anchor-y + 4px + self.height <= root.window-height ? Actions.tag-anchor-y + 4px : Actions.tag-anchor-y - root.field-height - 4px - self.height;
+    width: 200px;
+    height: Actions.tag-options.length * root.row-height + 10px;
+    VerticalLayout {
+        padding: 5px;
+        for name[i] in Actions.tag-options : Rectangle {
+            height: root.row-height;
+            border-radius: 7px;
+            background: i == Actions.tag-highlighted ? Theme.accent : touch.has-hover ? Theme.chip : transparent;
+            accessible-role: list-item;
+            accessible-label: "#" + name;
+            touch := TouchArea {
+                clicked => { Actions.tag-pick(Actions.tag-list-task, name); }
+            }
+            Text {
+                x: 10px;
+                width: parent.width - 20px;
+                text: "#" + name;
+                font-size: 13px;
+                color: i == Actions.tag-highlighted ? #FFFFFF : Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+            }
         }
     }
 }
@@ -383,5 +416,10 @@ export component AppWindow inherits Window {
                 DialogButton { text: root.confirm-button; danger: true; clicked => { Actions.confirm-accept(); } }
             }
         }
+    }
+
+    // Sugestões do campo de tag, por cima de tudo (fora do FocusScope: o foco fica no campo).
+    if Actions.tag-list-open && Actions.tag-options.length > 0 : TagList {
+        window-height: root.height;
     }
 }

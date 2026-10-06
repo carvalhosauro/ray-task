@@ -27,6 +27,9 @@ export struct TaskItem {
     tags: [TagChip],
 }
 
+// Resultado de uma tecla no campo de tag: consumida? e o novo texto do campo.
+export struct TagKey { handled: bool, text: string }
+
 export struct CalCell { day: int, iso: string, today: bool, selected: bool, past: bool }
 
 // id -1 = Entrada

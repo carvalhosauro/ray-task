@@ -178,14 +178,26 @@ component TagPill inherits Pill {
     }
 }
 
-/// Campo "+ Tag" com sugestão em cinza: Tab completa com a sugestão; Enter usa o texto
-/// digitado (cria a tag ou reaproveita a de mesmo nome, sem diferença de caixa).
+/// Campo "+ Tag": sugestão em cinza (Tab completa) e a lista de tags do projeto (↑/↓, Enter,
+/// clique), desenhada em app.slint. Enter sem item destacado usa o texto digitado (cria a tag ou
+/// reaproveita a de mesmo nome, sem diferença de caixa).
 component TagInput inherits Rectangle {
     in property <int> task-id;
     // Sempre existe (para o Ctrl+T conseguir focar); some na Entrada, que não tem tags.
     in property <bool> shown: true;
     property <string> suggestion: Actions.tag-suggest(root.task-id, input.text);
+    // Posição na janela: a lista fica por cima de tudo (um PopupWindow tiraria o foco do campo).
+    property <length> anchor-x: root.absolute-position.x;
+    property <length> anchor-y: root.absolute-position.y + root.height;
+    property <int> clear-req: Actions.tag-clear-request;
     public function grab() { input.focus(); }
+    function publish-anchor() {
+        Actions.tag-anchor-x = root.anchor-x;
+        Actions.tag-anchor-y = root.anchor-y;
+    }
+    changed anchor-x => { if (input.has-focus) { root.publish-anchor(); } }
+    changed anchor-y => { if (input.has-focus) { root.publish-anchor(); } }
+    changed clear-req => { if (Actions.tag-list-task == root.task-id) { input.text = ""; } }
     visible: root.shown;
     width: root.shown ? 132px : 0px;
     height: 28px;
@@ -218,18 +230,23 @@ component TagInput inherits Rectangle {
                 vertical-alignment: center;
                 single-line: true;
                 accessible-label: "Adicionar tag";
-                accepted => {
-                    Actions.add-tag(root.task-id, self.text);
-                    self.text = "";
+                changed has-focus => {
+                    if (self.has-focus) { root.publish-anchor(); }
+                    Actions.tag-focus(root.task-id, self.has-focus, self.text);
                 }
+                edited => { Actions.tag-input(root.task-id, self.text); }
                 key-pressed(event) => {
                     if (event.text == Key.Backspace && self.text == "") {
                         Actions.remove-last-tag(root.task-id);
                         return accept;
                     }
-                    if (event.text == Key.Tab && root.suggestion != "") {
-                        self.text = root.suggestion;
-                        return accept;
+                    // ↑ ↓ Enter Esc Tab: o Rust decide (lista, sugestão ou deixar o evento seguir).
+                    if (event.text == Key.UpArrow || event.text == Key.DownArrow || event.text == Key.Return || event.text == Key.Escape || event.text == Key.Tab) {
+                        let result = Actions.tag-key(root.task-id, self.text, event.text, event.modifiers.control || event.modifiers.alt || event.modifiers.meta);
+                        if (result.handled) {
+                            self.text = result.text;
+                            return accept;
+                        }
                     }
                     return reject;
                 }

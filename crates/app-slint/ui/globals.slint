@@ -1,4 +1,4 @@
-import { ProjectChoice, CalCell } from "types.slint";
+import { ProjectChoice, CalCell, TagKey } from "types.slint";
 
 export global Actions {
     // navegação
@@ -27,6 +27,19 @@ export global Actions {
     in-out property <int> focus-title-request: 0;
     in-out property <int> focus-title-task: -1;
     in-out property <int> focus-title-handled: 0;
+    // lista de sugestões do campo de tag (desenhada por cima de tudo em app.slint)
+    in-out property <bool> tag-list-open;
+    in-out property <[string]> tag-options;
+    in-out property <int> tag-highlighted: -1;
+    in-out property <int> tag-list-task: -1;
+    in-out property <length> tag-anchor-x;
+    in-out property <length> tag-anchor-y;
+    in-out property <int> tag-clear-request;
+    callback tag-focus(int, bool, string);
+    callback tag-input(int, string);
+    // tecla: texto do campo, `event.text` e se havia Ctrl/Alt/Meta
+    callback tag-key(int, string, string, bool) -> TagKey;
+    callback tag-pick(int, string);
     // teclado e filtro
     // Atalho global: texto + modificadores do evento → `true` se havia ação para ele.
     callback key(string, bool, bool, bool, bool) -> bool;

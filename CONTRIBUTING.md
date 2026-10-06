@@ -37,6 +37,7 @@ On a slow machine, cap parallel compilation: `export CARGO_BUILD_JOBS=2`.
 - `crates/gus-list` (+ `gus-list-slint`): headless list logic (grouping, selection, keyed diff), std only; the first GusStack crate.
 - `crates/gus-anim-state`: headless animation timing (`Timeline`: per-key scripts of timed phases), std only.
 - `crates/gus-keys` (+ `gus-keys-slint`): headless keyboard shortcuts (chords + keymap), std only. ray-task's global shortcuts live in `crates/app-slint/src/keys.rs`, and a test keeps the README table in sync.
+- `crates/gus-combobox`: headless combobox (ranked matches, inline completion, list state), std only; drives the tag field's suggestion list.
 - `crates/app-slint` (`ray-task`): Slint UI, bindings and the app binary.
 - New logic goes into `ray-core` with tests; the UI layer stays thin.
 
