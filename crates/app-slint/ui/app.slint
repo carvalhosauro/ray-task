@@ -9,6 +9,7 @@ import { Icon, IconButton, Dialog, DialogButton, MenuPanel } from "components.sl
 import { Sidebar } from "sidebar.slint";
 import { TaskRow } from "task_row.slint";
 import { SettingsPage } from "settings.slint";
+import { HelpOverlay } from "help.slint";
 export { Actions, Picker, Prefs } from "globals.slint";
 export { Theme } from "theme.slint";
 export { TagChip, NavItem, TaskItem, CalCell, ProjectChoice, HelpItem } from "types.slint";
@@ -434,6 +435,8 @@ export component AppWindow inherits Window {
                 DialogButton { text: root.confirm-button; danger: true; clicked => { Actions.confirm-accept(); } }
             }
         }
+
+        if root.help-open : HelpOverlay { }
     }
 
     // Sugestões do campo de tag, por cima de tudo (fora do FocusScope: o foco fica no campo).

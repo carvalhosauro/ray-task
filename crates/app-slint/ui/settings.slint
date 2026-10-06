@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { Actions, Prefs } from "globals.slint";
 import { Segmented, Switch, DialogButton } from "components.slint";
+import { ShortcutTable } from "help.slint";
 
 component Section inherits VerticalLayout {
     in property <string> title;
@@ -22,7 +23,7 @@ export component SettingsPage inherits Rectangle {
         }
         Flickable {
             vertical-stretch: 1;
-            viewport-height: body.preferred-height;
+            content-height: body.preferred-height;
             body := VerticalLayout {
                 alignment: start;
                 padding-left: 32px;
@@ -76,6 +77,10 @@ export component SettingsPage inherits Rectangle {
                         DialogButton { text: "Verificar agora"; clicked => { Actions.check-updates(); } }
                         Text { text: Prefs.update-status; font-size: 13px; color: Theme.sub; vertical-alignment: center; }
                     }
+                }
+                Section {
+                    title: "Atalhos";
+                    ShortcutTable { }
                 }
             }
         }
