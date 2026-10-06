@@ -48,7 +48,7 @@ pub enum ThemeMode { System, Light, Dark }          // default System
 pub struct Settings {
     pub theme: ThemeMode,
     pub update_check: bool,                          // default true
-    pub update_last_check: Option<NaiveDateTime>,    // last *successful* check
+    pub update_last_check: Option<DateTime<Utc>>,    // last *successful* check
     pub update_dismissed: Option<String>,            // version the user said "don't remind me"
 }
 ```
@@ -56,9 +56,10 @@ pub struct Settings {
 - `db::load` reads the table into `Snapshot.settings`. Unknown keys are ignored; an invalid value
   falls back to the default with `tracing::warn` (also covers a downgrade meeting newer keys).
 - Key names and encodings: `theme` = `system|light|dark`, `update_check` = `0|1`,
-  `update_last_check` = `%Y-%m-%d %H:%M:%S`, `update_dismissed` = semver string without `v`.
-- `Store` gains `settings()`, `set_theme(ThemeMode)`, `set_update_check(bool)`,
-  `mark_update_checked(NaiveDateTime)`, `dismiss_update(String)`. Each updates in-memory state and
+  `update_last_check` = RFC 3339 UTC (same format as the other timestamps in the database),
+  `update_dismissed` = semver string without `v`.
+- `Store` gains `settings()`, `now_utc()`, `set_theme(ThemeMode)`, `set_update_check(bool)`,
+  `mark_update_checked()` (uses the store clock), `dismiss_update(String)`. Each updates in-memory state and
   pushes `WriteOp::SetSetting { key, value }`, applied as
   `INSERT … ON CONFLICT(key) DO UPDATE SET value = excluded.value`.
 - Settings are **not** undoable: no undo entry, and Ctrl+Z after a theme change undoes the last
@@ -76,11 +77,13 @@ pub struct Settings {
   from the network.
 - `is_newer(current: &Version, release: &Version, dismissed: Option<&str>) -> bool` — strictly
   greater than `CARGO_PKG_VERSION` and not equal to the dismissed version.
-- `should_check(settings: &Settings, now: NaiveDateTime) -> bool` — toggle on and (never checked
-  or ≥ 24 h since `update_last_check`).
-- `notes_excerpt(body: &str) -> String` — first 5 non-empty lines, leading `#`, `-`, `*` and
-  surrounding whitespace removed, each line cut at ~80 chars with `…`.
-- `install_command(os: Os) -> &'static str`:
+- `should_check(settings: &Settings, now: DateTime<Utc>) -> bool` — toggle on and (never checked,
+  ≥ 24 h since `update_last_check`, or `update_last_check` in the future after a clock change).
+- `notes_excerpt(body: &str) -> String` — the release body written by `dist` is the changelog
+  (if any) followed by its own `## Install …` / `## Download …` boilerplate. Read only the lines
+  before the first `## Install`; skip headings and code fences; bullets (`-`/`*`) become `• `;
+  keep at most 5 lines, each cut at 80 chars with `…`. The v0.1.0 body yields an empty excerpt.
+- `install_command_for(windows: bool) -> &'static str` (and `install_command()` for the running OS):
   - Linux / macOS:
     `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/carvalhosauro/ray-task/releases/latest/download/ray-task-installer.sh | sh`
   - Windows:
@@ -88,11 +91,15 @@ pub struct Settings {
 
 ### Network shell
 
-- `check() -> Result<Release, UpdateError>`: `ureq` GET
+- `fetch() -> Result<String, UpdateError>`: `ureq` GET
   `https://api.github.com/repos/carvalhosauro/ray-task/releases/latest`, 10 s timeout,
-  `User-Agent: ray-task/<version>`, `Accept: application/vnd.github+json`.
-- Runs on a `std::thread`; the result comes back with `slint::invoke_from_event_loop` into
-  `bind`, which updates the UI and, on success, calls `mark_update_checked(now)`.
+  `User-Agent: ray-task/<version>`, `Accept: application/vnd.github+json`; returns the raw body.
+- Runs on a `std::thread`; the body comes back through `upgrade_in_event_loop` as the Slint
+  callback `Actions.update-response(ok, body-or-error)`. The handler runs `parse_release` on the
+  event loop and, on success, calls `mark_update_checked()`. UI tests inject JSON fixtures through
+  the same callback, so parsing and UI are tested end to end without network.
+- The controller keeps the check state (`begin_check(manual, now) -> bool`,
+  `finish_check(result)`, `update_notice()`, `dismiss_update()`), so it is unit-testable.
 
 ### When it runs
 
@@ -120,6 +127,14 @@ slower once; no runtime cost.
 - Leave: `Esc`, or clicking any view/project in the sidebar. While on Settings no sidebar item is
   selected.
 - Page switch reuses the 60 ms content crossfade from `switch_view`.
+
+### Keys while away from the task list
+
+- Settings page open: only `Esc`, `F1`/`?`, `Ctrl+,`, `Ctrl+1…9` and `Ctrl+Shift+N` act. Keys
+  that target the (hidden) selected task — arrows, `Enter`, `Ctrl+Enter`, `Ctrl+D`, `Ctrl+T`,
+  `Delete`, `Ctrl+Z`, `Ctrl+N`, `Ctrl+F` — do nothing, so nothing changes out of sight.
+- Shortcut overlay open: only `Esc` and `F1`/`?` act.
+- `Esc` order: close overlay → leave Settings → the existing task-list behavior.
 
 ### Settings page
 
