@@ -111,6 +111,21 @@ pub fn install_command() -> &'static str {
     install_command_for(cfg!(windows))
 }
 
+const API_URL: &str = "https://api.github.com/repos/carvalhosauro/ray-task/releases/latest";
+const TIMEOUT: Duration = Duration::from_secs(10);
+
+/// GET do último release (bloqueia: chame fora do event loop). Devolve o corpo cru.
+pub fn fetch() -> Result<String, UpdateError> {
+    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).build().into();
+    let mut response = agent
+        .get(API_URL)
+        .header("User-Agent", concat!("ray-task/", env!("CARGO_PKG_VERSION")))
+        .header("Accept", "application/vnd.github+json")
+        .call()
+        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    response.body_mut().read_to_string().map_err(|e| UpdateError::Network(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{NaiveDateTime, TimeDelta};

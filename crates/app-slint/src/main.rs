@@ -53,7 +53,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let handle = writer.handle();
     let retry = writer.handle();
     let controller = Controller::new(Store::new(snapshot, Box::new(SystemClock)), Box::new(move |ops| handle.send(ops)));
-    let binding = bind::bind(&ui, controller, Box::new(move || retry.retry()));
+    let mut binding = bind::bind(&ui, controller, Box::new(move || retry.retry()));
+    binding.start_update_checks(std::sync::Arc::new(ray_task::update::fetch));
     ui.invoke_focus_root();
     tracing::info!(ms = started.elapsed().as_millis() as u64, "pronto");
 
