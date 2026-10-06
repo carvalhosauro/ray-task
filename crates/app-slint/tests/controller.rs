@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use ray_core::{FixedClock, Snapshot, Store, View, WriteOp};
@@ -25,6 +26,10 @@ fn d(s: &str) -> NaiveDate {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
 }
 
+fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+}
+
 #[test]
 fn new_task_in_today_is_due_today_and_persisted() {
     let mut f = at("2026-10-05 13:35");
@@ -44,13 +49,13 @@ fn new_task_in_today_is_due_today_and_persisted() {
 fn completed_task_lingers_then_leaves() {
     let mut f = at("2026-10-05 13:35");
     let id = f.c.commit_new("x").unwrap();
-    assert_eq!(f.c.toggle(id), Ok(true));
+    assert_eq!(f.c.toggle(id, ms(0)), Ok(true));
     let row = &f.c.rows()[0];
     assert!(row.done && !row.leaving);
     assert_eq!(f.c.nav_rows()[0].count, 0);
-    assert!(f.c.start_leaving(id));
+    f.c.advance(ms(600));
     assert!(f.c.rows()[0].leaving);
-    f.c.finish_leaving(id);
+    f.c.advance(ms(820));
     assert!(f.c.rows().is_empty());
 }
 
@@ -58,9 +63,9 @@ fn completed_task_lingers_then_leaves() {
 fn undo_during_linger_keeps_the_task() {
     let mut f = at("2026-10-05 13:35");
     let id = f.c.commit_new("x").unwrap();
-    f.c.toggle(id).unwrap();
+    f.c.toggle(id, ms(0)).unwrap();
     assert!(f.c.undo());
-    assert!(!f.c.start_leaving(id));
+    f.c.advance(ms(1_000));
     let rows = f.c.rows();
     assert_eq!(rows.len(), 1);
     assert!(!rows[0].done && !rows[0].leaving);
@@ -70,10 +75,10 @@ fn undo_during_linger_keeps_the_task() {
 fn delete_happens_only_after_the_animation() {
     let mut f = at("2026-10-05 13:35");
     let id = f.c.commit_new("x").unwrap();
-    assert!(f.c.begin_delete(id));
+    assert!(f.c.begin_delete(id, ms(0)));
     assert!(f.c.rows()[0].leaving);
     assert!(f.c.store.task(id).is_some());
-    f.c.finish_delete(id).unwrap();
+    assert_eq!(f.c.advance(ms(220)), vec![Ok(id)]);
     assert!(f.c.rows().is_empty());
     assert!(f.c.undo());
     assert_eq!(f.c.rows().len(), 1);
@@ -211,14 +216,14 @@ fn tick_pulses_only_tasks_that_just_became_due() {
     f.c.set_time(b, "15:00").unwrap();
     let previous = f.c.store.now();
     f.clock.set("2026-10-05 14:00");
-    assert_eq!(f.c.tick(previous), vec![a]);
+    assert_eq!(f.c.tick(previous, ms(0)), vec![a]);
     assert!(f.c.rows().iter().find(|r| r.id == a).unwrap().pulse);
-    f.c.clear_pulse();
+    f.c.advance(ms(700));
     assert!(f.c.rows().iter().all(|r| !r.pulse));
 
     let previous = NaiveDateTime::parse_from_str("2026-10-05 23:59", "%Y-%m-%d %H:%M").unwrap();
     f.clock.set("2026-10-06 00:00");
-    assert!(f.c.tick(previous).is_empty(), "virada do dia não pulsa nada");
+    assert!(f.c.tick(previous, ms(800)).is_empty(), "virada do dia não pulsa nada");
 }
 
 #[test]
@@ -241,9 +246,8 @@ fn project_view_can_show_completed_section() {
     f.c.create_project("Casa").unwrap();
     let a = f.c.commit_new("a").unwrap();
     f.c.commit_new("b").unwrap();
-    f.c.toggle(a).unwrap();
-    f.c.start_leaving(a);
-    f.c.finish_leaving(a);
+    f.c.toggle(a, ms(0)).unwrap();
+    f.c.advance(ms(820));
     assert_eq!(f.c.done_toggle_label(), "Mostrar concluídas (1)");
     f.c.toggle_show_done();
     let rows = f.c.rows();
@@ -301,8 +305,9 @@ fn calendar_follows_popover_month() {
 fn undo_after_leaving_started_clears_animation_state() {
     let mut f = at("2026-10-05 13:35");
     let id = f.c.commit_new("x").unwrap();
-    f.c.toggle(id).unwrap();
-    assert!(f.c.start_leaving(id));
+    f.c.toggle(id, ms(0)).unwrap();
+    f.c.advance(ms(600));
+    assert!(f.c.rows()[0].leaving);
     assert!(f.c.undo());
     let rows = f.c.rows();
     assert_eq!(rows.len(), 1);
@@ -363,8 +368,8 @@ fn undoing_a_delete_selects_the_restored_task() {
     f.c.move_selection(1);
     f.c.move_selection(1);
     assert_eq!(f.c.selected, Some(b));
-    assert!(f.c.begin_delete(b));
-    f.c.finish_delete(b).unwrap();
+    assert!(f.c.begin_delete(b, ms(0)));
+    assert_eq!(f.c.advance(ms(220)), vec![Ok(b)]);
     assert_eq!(f.c.selected, None);
     assert!(f.c.undo());
     assert_eq!(f.c.selected, Some(b), "a tarefa restaurada volta selecionada");
@@ -389,11 +394,10 @@ fn lingering_task_stays_out_of_completed_section() {
     let a = f.c.commit_new("a").unwrap();
     let b = f.c.commit_new("b").unwrap();
     let c = f.c.commit_new("c").unwrap();
-    f.c.toggle(c).unwrap();
-    f.c.start_leaving(c);
-    f.c.finish_leaving(c);
+    f.c.toggle(c, ms(0)).unwrap();
+    f.c.advance(ms(820));
     f.c.toggle_show_done();
-    f.c.toggle(a).unwrap();
+    f.c.toggle(a, ms(1_000)).unwrap();
     let rows = f.c.rows();
     assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![a, b, c]);
     assert!(rows[0].done, "a está concluída mas ainda na parte aberta (lingering)");
@@ -408,10 +412,10 @@ fn arrow_selection_skips_leaving_rows() {
     let c = f.c.commit_new("c").unwrap();
     f.c.move_selection(1);
     assert_eq!(f.c.selected, Some(a));
-    assert!(f.c.begin_delete(b));
+    assert!(f.c.begin_delete(b, ms(0)));
     f.c.move_selection(1);
     assert_eq!(f.c.selected, Some(c));
-    assert!(f.c.begin_delete(c));
+    assert!(f.c.begin_delete(c, ms(0)));
     f.c.move_selection(1);
     assert_eq!(f.c.selected, Some(a), "seleção numa linha saindo recomeça do topo");
 }
@@ -428,4 +432,95 @@ fn arrow_selection_clamps_extreme_deltas() {
     assert_eq!(f.c.selected, Some(c));
     f.c.move_selection(i32::MIN);
     assert_eq!(f.c.selected, Some(a));
+}
+
+#[test]
+fn deleting_during_linger_goes_straight_to_delete() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    f.c.toggle(a, ms(0)).unwrap();
+    assert!(f.c.begin_delete(a, ms(100)));
+    assert!(f.c.rows()[0].leaving, "apagar não espera o fim do linger");
+    assert_eq!(f.c.advance(ms(320)), vec![Ok(a)]);
+    assert!(f.c.store.task(a).is_none());
+    assert!(f.c.advance(ms(5_000)).is_empty(), "o roteiro de conclusão foi substituído");
+}
+
+#[test]
+fn uncompleting_during_leaving_cancels_the_exit() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    f.c.toggle(a, ms(0)).unwrap();
+    f.c.advance(ms(600));
+    assert!(f.c.rows()[0].leaving);
+    assert_eq!(f.c.toggle(a, ms(700)), Ok(false));
+    assert!(!f.c.rows()[0].leaving && !f.c.rows()[0].done);
+    f.c.advance(ms(5_000));
+    assert_eq!(f.c.rows().len(), 1);
+    assert_eq!(f.c.next_anim_deadline(), None);
+}
+
+#[test]
+fn recompleting_restarts_the_linger() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    f.c.toggle(a, ms(0)).unwrap();
+    f.c.toggle(a, ms(300)).unwrap();
+    f.c.toggle(a, ms(400)).unwrap();
+    f.c.advance(ms(900));
+    assert!(!f.c.rows()[0].leaving, "linger novo de 600 ms a partir de 400");
+    f.c.advance(ms(1_000));
+    assert!(f.c.rows()[0].leaving);
+}
+
+#[test]
+fn late_advance_finishes_every_step() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    let b = f.c.commit_new("b").unwrap();
+    f.c.toggle(a, ms(0)).unwrap();
+    f.c.begin_delete(b, ms(0));
+    assert_eq!(f.c.advance(ms(60_000)), vec![Ok(b)]);
+    assert!(f.c.rows().is_empty());
+    assert_eq!(f.c.next_anim_deadline(), None);
+}
+
+#[test]
+fn undo_does_not_cancel_a_pending_delete() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    let b = f.c.commit_new("b").unwrap();
+    f.c.toggle(a, ms(0)).unwrap();
+    f.c.begin_delete(b, ms(0));
+    assert!(f.c.undo(), "desfaz a conclusão de a");
+    assert_eq!(f.c.advance(ms(220)), vec![Ok(b)], "b continua sendo apagada");
+    assert_eq!(f.c.rows().iter().map(|r| r.id).collect::<Vec<_>>(), vec![a]);
+}
+
+#[test]
+fn next_anim_deadline_is_the_earliest() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    let b = f.c.commit_new("b").unwrap();
+    assert_eq!(f.c.next_anim_deadline(), None);
+    f.c.toggle(a, ms(0)).unwrap();
+    assert_eq!(f.c.next_anim_deadline(), Some(ms(600)));
+    f.c.begin_delete(b, ms(100));
+    assert_eq!(f.c.next_anim_deadline(), Some(ms(320)));
+    f.c.advance(ms(320));
+    assert_eq!(f.c.next_anim_deadline(), Some(ms(600)));
+    f.c.advance(ms(600));
+    assert_eq!(f.c.next_anim_deadline(), Some(ms(820)));
+}
+
+#[test]
+fn failed_delete_is_reported() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    f.c.begin_delete(a, ms(0));
+    f.c.store.delete_task(a).unwrap();
+    let results = f.c.advance(ms(220));
+    assert!(matches!(results.as_slice(), [Err(_)]), "{results:?}");
+    assert!(f.c.undo(), "desfaz a remoção feita direto no store");
+    assert_eq!(f.c.selected, None, "não foi o app que apagou: o desfazer não seleciona a tarefa");
 }

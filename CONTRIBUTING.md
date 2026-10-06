@@ -35,6 +35,7 @@ On a slow machine, cap parallel compilation: `export CARGO_BUILD_JOBS=2`.
 
 - `crates/core` (`ray-core`): domain, store, undo and SQLite persistence. UI-agnostic, no Slint here.
 - `crates/gus-list` (+ `gus-list-slint`): headless list logic (grouping, selection, keyed diff), std only; the first GusStack crate.
+- `crates/gus-anim-state`: headless animation timing (`Timeline`: per-key scripts of timed phases), std only.
 - `crates/app-slint` (`ray-task`): Slint UI, bindings and the app binary.
 - New logic goes into `ray-core` with tests; the UI layer stays thin.
 
@@ -46,7 +47,7 @@ On a slow machine, cap parallel compilation: `export CARGO_BUILD_JOBS=2`.
 
 ## Coverage
 
-CI fails if line coverage drops below **92%**. The floor only goes up: if your PR raises coverage, bump `--fail-under-lines` in `.github/workflows/ci.yml` to the new integer. Lowering it needs a written reason in the PR description.
+CI fails if line coverage drops below **93%**. The floor only goes up: if your PR raises coverage, bump `--fail-under-lines` in `.github/workflows/ci.yml` to the new integer. Lowering it needs a written reason in the PR description.
 
 ## Releases (maintainers)
 

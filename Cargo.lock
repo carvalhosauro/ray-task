@@ -3660,6 +3660,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs",
+ "gus-anim-state",
  "gus-list",
  "gus-list-slint",
  "i-slint-backend-testing",

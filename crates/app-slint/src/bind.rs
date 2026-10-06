@@ -1,6 +1,6 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use ray_core::writer::WriterEvent;
@@ -24,12 +24,37 @@ pub(crate) enum Pending {
     MoveTask(TaskId, Option<ray_core::ProjectId>),
 }
 
+/// Relógio das animações. O backend de testes do Slint adianta o tempo dos timers, não o
+/// `Instant`; por isso o relógio nunca fica atrás do último prazo que o timer cumpriu.
+struct AnimClock {
+    start: Instant,
+    last: Cell<Duration>,
+}
+
+impl AnimClock {
+    fn new() -> Self {
+        Self { start: Instant::now(), last: Cell::new(Duration::ZERO) }
+    }
+
+    fn now(&self) -> Duration {
+        let now = self.start.elapsed().max(self.last.get());
+        self.last.set(now);
+        now
+    }
+
+    fn reached(&self, deadline: Duration) {
+        self.last.set(self.last.get().max(deadline));
+    }
+}
+
 pub(crate) struct Shared {
     pub(crate) ui: slint::Weak<AppWindow>,
     pub(crate) ctrl: RefCell<Controller>,
     tasks: Rc<VecModel<TaskItem>>,
     pub(crate) pending: RefCell<Option<Pending>>,
     toast_timer: Timer,
+    anim_clock: AnimClock,
+    anim_timer: Timer,
     pub(crate) retry: Box<dyn Fn()>,
 }
 
@@ -60,6 +85,8 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
         tasks,
         pending: RefCell::new(None),
         toast_timer: Timer::default(),
+        anim_clock: AnimClock::new(),
+        anim_timer: Timer::default(),
         retry,
     });
     wire_tasks(ui, &shared);
@@ -220,36 +247,49 @@ pub fn show_writer_event(ui: &AppWindow, event: &WriterEvent) {
 }
 
 pub(crate) fn toggle(s: &Rc<Shared>, id: TaskId) {
-    let done = log_err(s.ctrl.borrow_mut().toggle(id), "concluir tarefa");
+    let now = s.anim_clock.now();
+    let done = log_err(s.ctrl.borrow_mut().toggle(id, now), "concluir tarefa");
     refresh(s);
-    if done != Some(true) {
+    arm_anim(s);
+    if done == Some(true) {
+        show_toast(s, "Tarefa concluída", "Desfazer", TOAST_UNDO);
+    }
+}
+
+pub(crate) fn delete(s: &Rc<Shared>, id: TaskId) {
+    let now = s.anim_clock.now();
+    if !s.ctrl.borrow_mut().begin_delete(id, now) {
         return;
     }
-    show_toast(s, "Tarefa concluída", "Desfazer", TOAST_UNDO);
-    let s1 = s.clone();
-    Timer::single_shot(Duration::from_millis(600), move || {
-        let leaving = s1.ctrl.borrow_mut().start_leaving(id);
-        refresh(&s1);
-        if leaving {
-            let s2 = s1.clone();
-            Timer::single_shot(Duration::from_millis(220), move || update(&s2, |c| c.finish_leaving(id)));
+    refresh(s);
+    arm_anim(s);
+}
+
+/// Arma o timer único das animações para o próximo prazo; sem nada tocando, para.
+/// Um prazo cancelado depois (desfazer) só acorda o timer à toa: `advance` não faz nada.
+fn arm_anim(s: &Rc<Shared>) {
+    let Some(deadline) = s.ctrl.borrow().next_anim_deadline() else {
+        s.anim_timer.stop();
+        return;
+    };
+    let delay = deadline.saturating_sub(s.anim_clock.now());
+    let weak = Rc::downgrade(s);
+    s.anim_timer.start(TimerMode::SingleShot, delay, move || {
+        if let Some(s) = weak.upgrade() {
+            anim_fired(&s, deadline);
         }
     });
 }
 
-pub(crate) fn delete(s: &Rc<Shared>, id: TaskId) {
-    if !s.ctrl.borrow_mut().begin_delete(id) {
-        return;
-    }
+fn anim_fired(s: &Rc<Shared>, deadline: Duration) {
+    s.anim_clock.reached(deadline);
+    let now = s.anim_clock.now();
+    let results = s.ctrl.borrow_mut().advance(now);
     refresh(s);
-    let s1 = s.clone();
-    Timer::single_shot(Duration::from_millis(220), move || {
-        let deleted = log_err(s1.ctrl.borrow_mut().finish_delete(id), "apagar tarefa").is_some();
-        refresh(&s1);
-        if deleted {
-            show_toast(&s1, "Tarefa apagada", "Desfazer", TOAST_UNDO);
-        }
-    });
+    if results.into_iter().filter_map(|r| log_err(r, "apagar tarefa")).count() > 0 {
+        show_toast(s, "Tarefa apagada", "Desfazer", TOAST_UNDO);
+    }
+    arm_anim(s);
 }
 
 /// Crossfade: some (60 ms), troca o conteúdo, reaparece (60 ms). A seleção da sidebar desliza na hora.
@@ -776,10 +816,8 @@ fn start_clock(s: &Rc<Shared>) -> Rc<Timer> {
 fn minute_tick(s: &Rc<Shared>, last: &Cell<NaiveDateTime>) {
     let now = s.ctrl.borrow().store.now();
     let previous = last.replace(now);
-    let pulsed = s.ctrl.borrow_mut().tick(previous);
+    let anim_now = s.anim_clock.now();
+    s.ctrl.borrow_mut().tick(previous, anim_now);
     refresh(s);
-    if !pulsed.is_empty() {
-        let s1 = s.clone();
-        Timer::single_shot(Duration::from_millis(700), move || update(&s1, |c| c.clear_pulse()));
-    }
+    arm_anim(s);
 }
