@@ -3673,6 +3673,8 @@ dependencies = [
  "chrono",
  "dirs",
  "gus-anim-state",
+ "gus-keys",
+ "gus-keys-slint",
  "gus-list",
  "gus-list-slint",
  "i-slint-backend-testing",
