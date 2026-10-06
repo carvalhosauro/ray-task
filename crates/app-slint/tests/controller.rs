@@ -369,3 +369,63 @@ fn undoing_a_delete_selects_the_restored_task() {
     assert!(f.c.undo());
     assert_eq!(f.c.selected, Some(b), "a tarefa restaurada volta selecionada");
 }
+
+#[test]
+fn upcoming_filter_moves_header_to_first_visible_task() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.select_view(View::Upcoming);
+    f.c.commit_new("alpha").unwrap();
+    let b = f.c.commit_new("beta").unwrap();
+    f.c.set_filter("beta");
+    let rows = f.c.rows();
+    assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![b]);
+    assert_eq!((rows[0].group_header.as_str(), rows[0].group_sub.as_str()), ("Amanhã", "ter, 6 out"));
+}
+
+#[test]
+fn lingering_task_stays_out_of_completed_section() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.create_project("Casa").unwrap();
+    let a = f.c.commit_new("a").unwrap();
+    let b = f.c.commit_new("b").unwrap();
+    let c = f.c.commit_new("c").unwrap();
+    f.c.toggle(c).unwrap();
+    f.c.start_leaving(c);
+    f.c.finish_leaving(c);
+    f.c.toggle_show_done();
+    f.c.toggle(a).unwrap();
+    let rows = f.c.rows();
+    assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![a, b, c]);
+    assert!(rows[0].done, "a está concluída mas ainda na parte aberta (lingering)");
+    assert_eq!(rows.iter().map(|r| r.group_header.as_str()).collect::<Vec<_>>(), vec!["", "", "Concluídas"]);
+}
+
+#[test]
+fn arrow_selection_skips_leaving_rows() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    let b = f.c.commit_new("b").unwrap();
+    let c = f.c.commit_new("c").unwrap();
+    f.c.move_selection(1);
+    assert_eq!(f.c.selected, Some(a));
+    assert!(f.c.begin_delete(b));
+    f.c.move_selection(1);
+    assert_eq!(f.c.selected, Some(c));
+    assert!(f.c.begin_delete(c));
+    f.c.move_selection(1);
+    assert_eq!(f.c.selected, Some(a), "seleção numa linha saindo recomeça do topo");
+}
+
+#[test]
+fn arrow_selection_clamps_extreme_deltas() {
+    let mut f = at("2026-10-05 13:35");
+    let a = f.c.commit_new("a").unwrap();
+    f.c.commit_new("b").unwrap();
+    let c = f.c.commit_new("c").unwrap();
+    f.c.move_selection(1);
+    f.c.move_selection(1);
+    f.c.move_selection(i32::MAX);
+    assert_eq!(f.c.selected, Some(c));
+    f.c.move_selection(i32::MIN);
+    assert_eq!(f.c.selected, Some(a));
+}

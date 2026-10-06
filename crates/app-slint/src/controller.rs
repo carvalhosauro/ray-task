@@ -57,6 +57,14 @@ pub enum QuickDate {
     Clear,
 }
 
+/// Em qual parte da lista uma tarefa cai; o início de cada parte ganha um cabeçalho.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Open,
+    Day(NaiveDate),
+    Done,
+}
+
 pub struct Controller {
     pub store: Store,
     persist: Box<dyn FnMut(Vec<WriteOp>)>,
@@ -188,31 +196,37 @@ impl Controller {
         self.lingering.union(&self.leaving).copied().collect()
     }
 
+    /// Tarefas visíveis, na ordem da lista: as da visão (com o filtro de texto) e, num projeto com
+    /// "mostrar concluídas", as concluídas que já saíram.
+    fn visible(&self, keep: &HashSet<TaskId>) -> Vec<&Task> {
+        let mut out: Vec<&Task> = self.store.view(self.view, keep).into_iter().filter(|t| matches_query(t, &self.filter)).collect();
+        if let (View::Project(id), true) = (self.view, self.show_done) {
+            let done = self.store.completed_in_project(id).into_iter();
+            out.extend(done.filter(|t| !keep.contains(&t.id) && matches_query(t, &self.filter)));
+        }
+        out
+    }
+
     pub fn rows(&self) -> Vec<Row> {
         let now = self.store.now();
         let today = now.date();
         let keep = self.keep();
-        let mut rows = Vec::new();
-        let mut last_date = None;
-        for task in self.store.view(self.view, &keep).into_iter().filter(|t| matches_query(t, &self.filter)) {
-            let mut group = (String::new(), String::new());
-            if self.view == View::Upcoming {
-                let date = task.due.expect("Próximos sempre tem data").date;
-                if last_date != Some(date) {
-                    last_date = Some(date);
-                    group = present::group_header(date, today);
-                }
-            }
-            rows.push(self.row(task, group, now));
-        }
-        if let (View::Project(id), true) = (self.view, self.show_done) {
-            let done = self.store.completed_in_project(id).into_iter().filter(|t| !keep.contains(&t.id) && matches_query(t, &self.filter));
-            for (i, task) in done.enumerate() {
-                let group = if i == 0 { ("Concluídas".to_string(), String::new()) } else { Default::default() };
-                rows.push(self.row(task, group, now));
-            }
-        }
-        rows
+        // Concluída fora do `keep` = já saiu; a recém-concluída (lingering) fica na parte aberta.
+        let section = |task: &Task| match self.view {
+            _ if task.is_done() && !keep.contains(&task.id) => Section::Done,
+            View::Upcoming => Section::Day(task.due.expect("Próximos sempre tem data").date),
+            _ => Section::Open,
+        };
+        gus_list::group_runs(self.visible(&keep), section)
+            .map(|(start, task)| {
+                let group = match start {
+                    Some(Section::Day(date)) => present::group_header(date, today),
+                    Some(Section::Done) => ("Concluídas".to_string(), String::new()),
+                    _ => Default::default(),
+                };
+                self.row(task, group, now)
+            })
+            .collect()
     }
 
     fn row(&self, task: &Task, group: (String, String), now: NaiveDateTime) -> Row {
@@ -341,17 +355,8 @@ impl Controller {
     }
 
     pub fn move_selection(&mut self, delta: i32) {
-        let ids: Vec<TaskId> = self.rows().into_iter().filter(|r| !r.leaving).map(|r| r.id).collect();
-        if ids.is_empty() {
-            self.selected = None;
-            return;
-        }
-        let next = match self.selected.and_then(|s| ids.iter().position(|x| *x == s)) {
-            Some(i) => (i as i32 + delta).clamp(0, ids.len() as i32 - 1) as usize,
-            None if delta >= 0 => 0,
-            None => ids.len() - 1,
-        };
-        self.selected = Some(ids[next]);
+        let keys: Vec<TaskId> = self.visible(&self.keep()).iter().map(|t| t.id).collect();
+        self.selected = gus_list::step(&keys, self.selected.as_ref(), delta as isize, |id| !self.leaving.contains(id)).copied();
     }
 
     /// Esc fecha uma camada por vez: captura → popover → tarefa aberta → filtro → seleção.

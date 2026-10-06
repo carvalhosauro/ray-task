@@ -3648,6 +3648,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs",
+ "gus-list",
  "i-slint-backend-testing",
  "ray-core",
  "slint",
