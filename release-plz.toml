@@ -21,3 +21,8 @@ git_tag_enable = false
 name = "gus-list"
 changelog_update = false
 git_tag_enable = false
+
+[[package]]
+name = "gus-list-slint"
+changelog_update = false
+git_tag_enable = false

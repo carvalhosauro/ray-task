@@ -1,0 +1,13 @@
+[package]
+name = "gus-list-slint"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+description = "Applies gus-list keyed diffs to Slint VecModels."
+
+[dependencies]
+gus-list = { path = "../gus-list" }
+slint = "1.18"
