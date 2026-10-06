@@ -3657,6 +3657,7 @@ dependencies = [
  "chrono",
  "dirs",
  "gus-list",
+ "gus-list-slint",
  "i-slint-backend-testing",
  "ray-core",
  "slint",

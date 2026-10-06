@@ -31,9 +31,10 @@ On a slow machine, cap parallel compilation: `export CARGO_BUILD_JOBS=2`.
 | Performance budget | `cargo test -p ray-core --release --test perf -- --ignored --nocapture` |
 | Dependency policy | `cargo deny check` |
 
-## Architecture in three lines
+## Architecture at a glance
 
 - `crates/core` (`ray-core`): domain, store, undo and SQLite persistence. UI-agnostic, no Slint here.
+- `crates/gus-list` (+ `gus-list-slint`): headless list logic (grouping, selection, keyed diff), std only; the first GusStack crate.
 - `crates/app-slint` (`ray-task`): Slint UI, bindings and the app binary.
 - New logic goes into `ray-core` with tests; the UI layer stays thin.
 

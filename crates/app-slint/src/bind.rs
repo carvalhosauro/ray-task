@@ -1,5 +1,4 @@
 use std::cell::{Cell, Ref, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -129,41 +128,6 @@ fn task_item(r: Row) -> TaskItem {
     }
 }
 
-/// Atualiza o modelo no lugar: linhas da mesma tarefa são reaproveitadas para as animações rodarem.
-///
-/// O(n): um mapa id → posição antiga, montado uma vez. Durante a passada o modelo é sempre
-/// `novas[..i]` seguido de `antigas[cursor..]`, então a posição antiga diz quantas linhas descartar.
-/// Quando pouco se aproveita (troca de visão, filtro que corta muitas linhas) o modelo é trocado
-/// de uma vez: inserir/remover linha a linha custa O(n) cada e não há animação a preservar.
-fn sync_rows(model: &VecModel<TaskItem>, rows: Vec<TaskItem>) {
-    /// Acima disso, inserções + remoções viram uma troca do modelo inteiro.
-    const MAX_IN_PLACE_CHANGES: usize = 64;
-    let old: HashMap<i32, usize> = (0..model.row_count()).filter_map(|j| model.row_data(j).map(|r| (r.id, j))).collect();
-    let reused = rows.iter().filter(|r| old.contains_key(&r.id)).count();
-    let changes = (rows.len() - reused) + (old.len() - reused);
-    if reused * 2 < rows.len().max(old.len()) || changes > MAX_IN_PLACE_CHANGES {
-        model.set_vec(rows);
-        return;
-    }
-    let len = rows.len();
-    let mut cursor = 0;
-    for (i, row) in rows.into_iter().enumerate() {
-        match old.get(&row.id).copied().filter(|&j| j >= cursor) {
-            Some(j) => {
-                for _ in cursor..j {
-                    model.remove(i);
-                }
-                cursor = j + 1;
-                model.set_row_data(i, row);
-            }
-            None => model.insert(i, row),
-        }
-    }
-    while model.row_count() > len {
-        model.remove(model.row_count() - 1);
-    }
-}
-
 pub(crate) fn refresh(s: &Shared) {
     let Some(ui) = s.ui.upgrade() else { return };
     let c = s.ctrl.borrow();
@@ -171,7 +135,8 @@ pub(crate) fn refresh(s: &Shared) {
     ui.set_selected_nav(c.selected_nav() as i32);
     ui.set_view_title(c.title().into());
     ui.set_view_subtitle(c.subtitle().into());
-    sync_rows(&s.tasks, c.rows().into_iter().map(task_item).collect());
+    // Linhas da mesma tarefa são reaproveitadas para as animações rodarem.
+    gus_list_slint::sync(&s.tasks, c.rows().into_iter().map(task_item).collect(), |r| r.id);
     ui.set_expanded_id(c.expanded.map_or(-1, |id| id as i32));
     ui.set_selected_id(c.selected.map_or(-1, |id| id as i32));
     ui.set_adding(c.adding);
