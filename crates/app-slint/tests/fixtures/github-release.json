@@ -1,0 +1,9 @@
+{
+  "url": "https://api.github.com/repos/carvalhosauro/ray-task/releases/1",
+  "html_url": "https://github.com/carvalhosauro/ray-task/releases/tag/v0.2.0",
+  "tag_name": "v0.2.0",
+  "name": "0.2.0",
+  "draft": false,
+  "prerelease": false,
+  "body": "## Release Notes\n\n### Features\n\n- add a trash button to task rows\n- settings page with light and dark theme\n\n## Install ray-task 0.2.0\n\n### Install prebuilt binaries via shell script\n\n```sh\ncurl --proto '=https' --tlsv1.2 -LsSf https://github.com/carvalhosauro/ray-task/releases/download/v0.2.0/ray-task-installer.sh | sh\n```\n"
+}
