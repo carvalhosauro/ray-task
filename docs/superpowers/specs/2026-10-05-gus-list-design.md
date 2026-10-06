@@ -70,7 +70,7 @@ with `changelog_update = false` and `git_tag_enable = false`, like `ray-core`.
 ### `group_runs`
 
 ```rust
-pub fn group_runs<'a, T: 'a, G: PartialEq>(
+pub fn group_runs<'a, T: 'a, G: PartialEq + Clone>(
     items: impl IntoIterator<Item = &'a T>,
     group: impl Fn(&T) -> G,
 ) -> impl Iterator<Item = (Option<G>, &'a T)>;
@@ -157,9 +157,10 @@ where
 
 - Reads the old keys from the model, calls `diff(.., DEFAULT_MAX_IN_PLACE)`, applies the plan
   (`set_vec` for `Replace`; `remove` / `insert` / `set_row_data` for `Patch`).
-- Improvement over today: `Update` calls `set_row_data` only when the row actually changed
-  (`old != new`). Today every reused row notifies Slint, so the clock tick dirties the whole
-  list.
+- `Update` calls `set_row_data` only when the row actually changed (`old != new`). Caveat
+  found while planning: ray-task's `TaskItem.tags` is a `ModelRc`, which Slint compares by
+  pointer, so for ray-task every rebuilt row compares unequal and behaviour stays exactly as
+  today. The skip pays off for row types without nested models.
 - ray-task: `sync_rows(&model, rows)` becomes `gus_list_slint::sync(&model, rows, |r| r.id)`.
 
 ## Data flow in ray-task after the change
