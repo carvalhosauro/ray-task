@@ -10,7 +10,10 @@ fn chord(s: &str) -> Chord {
 #[test]
 fn keymap_has_every_global_shortcut() {
     let map = keymap();
-    assert_eq!(map.chords().count(), 21);
+    assert_eq!(map.chords().count(), 24);
+    assert_eq!(map.lookup(&chord("Ctrl+,")), Some(&KeyAction::OpenSettings));
+    assert_eq!(map.lookup(&chord("F1")), Some(&KeyAction::ToggleHelp));
+    assert_eq!(map.lookup(&chord("?")), Some(&KeyAction::ToggleHelp));
     assert_eq!(map.lookup(&chord("Ctrl+N")), Some(&KeyAction::NewTask));
     assert_eq!(map.lookup(&chord("Ctrl+Shift+N")), Some(&KeyAction::NewProject));
     assert_eq!(map.lookup(&chord("Up")), Some(&KeyAction::MoveSelection(-1)));
@@ -102,4 +105,20 @@ fn readme_table_is_exactly_the_help_rows() {
     let rows: Vec<&str> = section.lines().skip_while(|l| !l.starts_with("|---")).skip(1).take_while(|l| l.starts_with('|')).collect();
     let expected: Vec<String> = HELP.iter().map(|row| format!("| {} | {} |", row.label, row.text)).collect();
     assert_eq!(rows, expected, "a tabela do README e `keys::HELP` divergem");
+}
+
+#[test]
+fn question_mark_with_shift_still_opens_help() {
+    // Em layouts US o `?` sai com Shift: o adaptador descarta o Shift de símbolos.
+    let chord = gus_keys_slint::chord_from_slint("?", false, true, false, false).unwrap();
+    assert_eq!(keymap().lookup(&chord), Some(&KeyAction::ToggleHelp));
+}
+
+#[test]
+fn help_items_are_portuguese_without_backticks() {
+    let items = ray_task::keys::help_items();
+    assert_eq!(items.len(), HELP.len());
+    assert_eq!(items[0], ("Ctrl+N".to_string(), "Nova tarefa na visão atual".to_string()));
+    assert!(items.iter().all(|(k, t)| !k.contains('`') && !t.contains('`')));
+    assert!(items.iter().any(|(k, _)| k == "F1 / ?"));
 }

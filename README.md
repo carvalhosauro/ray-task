@@ -74,6 +74,8 @@ Every number is a test you can run: [`crates/core/tests/perf.rs`](crates/core/te
 | `Ctrl+1` / `2` / `3` | Today / Upcoming / Inbox |
 | `Ctrl+4` … `Ctrl+9` | Projects, in sidebar order |
 | `Ctrl+F` | Filter the current view |
+| `Ctrl+,` | Settings |
+| `F1` / `?` | Shortcut list |
 
 Right-click a project to rename, recolor or delete it. Click an open tag to remove, rename or delete it.
 

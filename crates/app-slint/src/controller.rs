@@ -7,6 +7,7 @@ pub use gus_combobox::Nav;
 use gus_combobox::{Combobox, Outcome};
 use ray_core::{matches_query, DomainError, Due, ProjectId, Store, Tag, TagId, Task, TaskId, ThemeMode, View, WriteOp, PROJECT_COLORS};
 
+use crate::keys::KeyAction;
 use crate::present::{self, CalDay, Tone};
 
 const INBOX_COLOR: &str = "#8E8E93";
@@ -491,6 +492,21 @@ impl Controller {
 
     pub fn toggle_help(&mut self) {
         self.help_open = !self.help_open;
+    }
+
+    /// Atalho permitido agora? Com o overlay aberto, só Esc e F1/?; nas configurações, nada que
+    /// mexa na lista escondida (a tarefa selecionada continua lá, fora de vista).
+    pub fn key_allowed(&self, action: KeyAction) -> bool {
+        if self.help_open {
+            return matches!(action, KeyAction::Escape | KeyAction::ToggleHelp);
+        }
+        match self.page {
+            Page::Tasks => true,
+            Page::Settings => matches!(
+                action,
+                KeyAction::Escape | KeyAction::ToggleHelp | KeyAction::OpenSettings | KeyAction::SelectNav(_) | KeyAction::NewProject
+            ),
+        }
     }
 
     pub fn set_theme(&mut self, theme: ThemeMode) {

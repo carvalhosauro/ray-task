@@ -747,17 +747,29 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
 fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     let actions = ui.global::<Actions>();
     {
-        let weak = ui.as_weak();
+        let s = s.clone();
         let keymap = keys::keymap();
         actions.on_key(move |text, ctrl, shift, alt, meta| {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = s.ui.upgrade() else { return false };
             let Some(&action) = gus_keys_slint::chord_from_slint(&text, ctrl, shift, alt, meta).and_then(|chord| keymap.lookup(&chord))
             else {
                 return false;
             };
-            run_key_action(&ui.global::<Actions>(), action);
+            // Atalho conhecido mas bloqueado (configurações/overlay abertos): consome sem agir.
+            let allowed = s.ctrl.borrow().key_allowed(action);
+            if allowed {
+                run_key_action(&ui.global::<Actions>(), action);
+            }
             true
         });
+    }
+    {
+        let s = s.clone();
+        actions.on_open_settings(move || update(&s, |c| c.open_settings()));
+    }
+    {
+        let s = s.clone();
+        actions.on_toggle_help(move || update(&s, |c| c.toggle_help()));
     }
     {
         let s = s.clone();
@@ -908,6 +920,8 @@ fn run_key_action(actions: &Actions<'_>, action: KeyAction) {
         KeyAction::Undo => actions.invoke_undo(),
         KeyAction::SelectNav(index) => actions.invoke_select_nav(index as i32),
         KeyAction::ToggleFilter => actions.invoke_toggle_filter(),
+        KeyAction::OpenSettings => actions.invoke_open_settings(),
+        KeyAction::ToggleHelp => actions.invoke_toggle_help(),
     }
 }
 

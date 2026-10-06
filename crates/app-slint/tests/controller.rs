@@ -6,6 +6,7 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use ray_core::{FixedClock, Snapshot, Store, ThemeMode, View, WriteOp};
 use ray_task::controller::{Controller, Page, QuickDate};
 use ray_task::controller::{Nav, TagKey};
+use ray_task::keys::KeyAction;
 use ray_task::present::Tone;
 
 struct Fixture {
@@ -737,4 +738,37 @@ fn theme_and_update_toggle_are_persisted() {
     let sent = f.sent.borrow();
     assert!(sent.contains(&WriteOp::SetSetting { key: "theme", value: "dark".into() }));
     assert!(sent.contains(&WriteOp::SetSetting { key: "update_check", value: "0".into() }));
+}
+
+#[test]
+fn task_keys_do_nothing_while_settings_is_open() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.open_settings();
+    for action in [
+        KeyAction::DeleteSelected,
+        KeyAction::ToggleSelected,
+        KeyAction::MoveSelection(1),
+        KeyAction::ExpandSelected,
+        KeyAction::DateSelected,
+        KeyAction::TagSelected,
+        KeyAction::Undo,
+        KeyAction::NewTask,
+        KeyAction::ToggleFilter,
+    ] {
+        assert!(!f.c.key_allowed(action), "{action:?}");
+    }
+    for action in [KeyAction::Escape, KeyAction::ToggleHelp, KeyAction::OpenSettings, KeyAction::SelectNav(0), KeyAction::NewProject] {
+        assert!(f.c.key_allowed(action), "{action:?}");
+    }
+}
+
+#[test]
+fn only_escape_and_help_work_while_help_is_open() {
+    let mut f = at("2026-10-05 13:35");
+    f.c.toggle_help();
+    assert!(f.c.key_allowed(KeyAction::Escape));
+    assert!(f.c.key_allowed(KeyAction::ToggleHelp));
+    assert!(!f.c.key_allowed(KeyAction::SelectNav(0)));
+    assert!(!f.c.key_allowed(KeyAction::OpenSettings));
+    assert!(!f.c.key_allowed(KeyAction::NewTask));
 }
