@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use ray_core::writer::WriterEvent;
 use ray_core::{DomainError, TaskId, View};
-use slint::{Color, ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
+use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
-use crate::controller::{Controller, NavRow, QuickDate, Row};
+use crate::controller::{Controller, Nav, NavRow, QuickDate, Row};
 use crate::keys::{self, KeyAction};
-use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TaskItem};
+use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TagKey, TaskItem};
 
 pub const TOAST_UNDO: i32 = 0;
 pub const TOAST_RETRY: i32 = 1;
@@ -158,7 +158,9 @@ fn task_item(r: Row) -> TaskItem {
 
 pub(crate) fn refresh(s: &Shared) {
     let Some(ui) = s.ui.upgrade() else { return };
+    s.ctrl.borrow_mut().drop_stale_tag_list();
     let c = s.ctrl.borrow();
+    ui.global::<Actions>().set_tag_list_open(c.tag_list_open());
     ui.set_nav(ModelRc::new(VecModel::from(c.nav_rows().into_iter().map(nav_item).collect::<Vec<_>>())));
     ui.set_selected_nav(c.selected_nav() as i32);
     ui.set_view_title(c.title().into());
@@ -684,12 +686,57 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
         actions.on_remove_last_tag(move |id| {
             update(&s, |c| {
                 log_err(c.remove_last_tag(id as TaskId), "remover última tag");
-            })
+                c.tag_input(); // as opções mudaram: o destaque antigo apontaria para outra tag
+            });
+            sync_tag_list(&s, id, "");
         });
     }
     {
         let s = s.clone();
         actions.on_tag_suggest(move |id, prefix| s.ctrl.borrow().tag_suggestion(id as TaskId, &prefix).into());
+    }
+    {
+        let s = s.clone();
+        actions.on_tag_focus(move |id, focused, text| {
+            s.ctrl.borrow_mut().tag_focus(id as TaskId, focused);
+            sync_tag_list(&s, id, &text);
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_tag_input(move |id, text| {
+            s.ctrl.borrow_mut().tag_input();
+            sync_tag_list(&s, id, &text);
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_tag_key(move |id, text, key, modified| {
+            let Some(nav) = tag_nav(&key, modified) else { return TagKey { handled: false, text } };
+            let result = s.ctrl.borrow_mut().tag_key(id as TaskId, &text, nav);
+            let Some(outcome) = log_err(result, "adicionar tag") else {
+                sync_tag_list(&s, id, &text);
+                return TagKey { handled: true, text };
+            };
+            if outcome.added {
+                refresh(&s);
+            }
+            sync_tag_list(&s, id, &outcome.text);
+            TagKey { handled: outcome.handled, text: outcome.text.into() }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_tag_pick(move |id, name| {
+            update(&s, |c| {
+                log_err(c.tag_pick(id as TaskId, &name), "adicionar tag");
+            });
+            sync_tag_list(&s, id, "");
+            if let Some(ui) = s.ui.upgrade() {
+                let actions = ui.global::<Actions>();
+                actions.set_tag_clear_request(actions.get_tag_clear_request() + 1);
+            }
+        });
     }
     {
         let s = s.clone();
@@ -810,6 +857,40 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
         let s = s.clone();
         actions.on_filter_changed(move |text| update(&s, |c| c.set_filter(&text)));
     }
+}
+
+/// Tecla do campo de tag → navegação da lista. Enter vale até com modificador (como o `accepted`
+/// do campo fazia); as outras só sem Ctrl/Alt/Meta.
+fn tag_nav(key: &str, modified: bool) -> Option<Nav> {
+    let mut chars = key.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else { return None };
+    if c == char::from(slint::platform::Key::Return) {
+        return Some(Nav::Enter);
+    }
+    if modified {
+        return None;
+    }
+    [
+        (slint::platform::Key::DownArrow, Nav::Down),
+        (slint::platform::Key::UpArrow, Nav::Up),
+        (slint::platform::Key::Escape, Nav::Escape),
+        (slint::platform::Key::Tab, Nav::Tab),
+    ]
+    .into_iter()
+    .find(|(k, _)| char::from(*k) == c)
+    .map(|(_, nav)| nav)
+}
+
+/// Copia o estado da lista de sugestões para o Slint (a lista é desenhada em app.slint).
+fn sync_tag_list(s: &Shared, id: i32, query: &str) {
+    let Some(ui) = s.ui.upgrade() else { return };
+    let c = s.ctrl.borrow();
+    let options: Vec<SharedString> = c.tag_options(id as TaskId, query).into_iter().map(Into::into).collect();
+    let actions = ui.global::<Actions>();
+    actions.set_tag_options(ModelRc::new(VecModel::from(options)));
+    actions.set_tag_highlighted(c.tag_highlighted().map_or(-1, |i| i as i32));
+    actions.set_tag_list_open(c.tag_list_open());
+    actions.set_tag_list_task(id);
 }
 
 /// Dispara o mesmo callback que o markup chamava antes: os handlers não mudam.

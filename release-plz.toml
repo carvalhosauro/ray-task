@@ -41,3 +41,8 @@ git_tag_enable = false
 name = "gus-keys-slint"
 changelog_update = false
 git_tag_enable = false
+
+[[package]]
+name = "gus-combobox"
+changelog_update = false
+git_tag_enable = false
