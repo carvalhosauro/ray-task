@@ -24,6 +24,13 @@ Compare lado a lado com `docs/superpowers/mockups/2026-10-05-ui-preview.html`.
 - [ ] Segunda instância mostra "O ray-task já está aberto em outra janela."
 - [ ] `chmod 000` no banco → tela de erro com caminho e motivo (desfaça depois)
 - [ ] Deixar o app aberto na virada da meia-noite: Amanhã vira Hoje
+- [ ] Lixeira aparece só no hover/seleção da linha e apaga com Desfazer; círculo de concluir muda de cor no hover
+- [ ] Configurações (`Ctrl+,` e botão na barra lateral): Sistema/Claro/Escuro trocam na hora e persistem após reiniciar
+- [ ] Tema "Sistema" segue a troca de tema do sistema com o app aberto
+- [ ] `F1` e `?` abrem a lista de atalhos; `Esc` e clique fora fecham; `?` num campo de texto só digita
+- [ ] Na tela de configurações, `Delete`/`Ctrl+Enter` não mexem na tarefa selecionada
+- [ ] Aviso de versão nova (rodar com versão menor no Cargo.toml): aparece discreto; popover copia o comando, abre o release e "Não avisar desta versão" persiste
+- [ ] Sem rede: nenhum aviso de erro aparece sozinho; "Verificar agora" mostra "Não foi possível verificar"
 
 ## Orçamentos (anote os valores)
 

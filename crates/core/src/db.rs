@@ -19,7 +19,7 @@ pub enum DbError {
     TooNew { found: i64, supported: i64 },
 }
 
-const MIGRATIONS: &[&str] = &[include_str!("migrations/001_init.sql")];
+const MIGRATIONS: &[&str] = &[include_str!("migrations/001_init.sql"), include_str!("migrations/002_settings.sql")];
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
 /// Abre (criando pastas e arquivo se preciso), faz backup se houver migration pendente e migra.
@@ -142,6 +142,15 @@ pub fn load(conn: &Connection) -> Result<Snapshot, DbError> {
             tags: tags_by_task.remove(&id).unwrap_or_default(),
         });
     }
+
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    for row in rows {
+        let (key, value) = row?;
+        if let Err(error) = snap.settings.apply(&key, &value) {
+            tracing::warn!(%key, %value, %error, "configuração inválida, usando o padrão");
+        }
+    }
     Ok(snap)
 }
 
@@ -213,6 +222,12 @@ fn apply_in(tx: &Transaction, op: &WriteOp) -> Result<(), DbError> {
         }
         WriteOp::DeleteTask(id) => {
             tx.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
+        }
+        WriteOp::SetSetting { key, value } => {
+            tx.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )?;
         }
     }
     Ok(())

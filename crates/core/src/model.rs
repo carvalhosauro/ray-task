@@ -58,6 +58,75 @@ pub struct Snapshot {
     pub projects: Vec<Project>,
     pub tags: Vec<Tag>,
     pub tasks: Vec<Task>,
+    pub settings: Settings,
+}
+
+pub const SETTING_THEME: &str = "theme";
+pub const SETTING_UPDATE_CHECK: &str = "update_check";
+pub const SETTING_UPDATE_LAST_CHECK: &str = "update_last_check";
+pub const SETTING_UPDATE_DISMISSED: &str = "update_dismissed";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ThemeMode::System => "system",
+            ThemeMode::Light => "light",
+            ThemeMode::Dark => "dark",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [ThemeMode::System, ThemeMode::Light, ThemeMode::Dark].into_iter().find(|m| m.as_str() == s)
+    }
+}
+
+/// Preferências do app. Não entram no desfazer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settings {
+    pub theme: ThemeMode,
+    pub update_check: bool,
+    /// Última verificação de atualização que deu certo.
+    pub update_last_check: Option<DateTime<Utc>>,
+    /// Versão que o usuário pediu para não ser avisado.
+    pub update_dismissed: Option<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { theme: ThemeMode::System, update_check: true, update_last_check: None, update_dismissed: None }
+    }
+}
+
+impl Settings {
+    /// Aplica uma linha da tabela `settings`. Chave desconhecida é ignorada (banco de uma versão
+    /// mais nova); valor inválido é erro e não muda nada.
+    pub fn apply(&mut self, key: &str, value: &str) -> Result<(), String> {
+        match key {
+            SETTING_THEME => self.theme = ThemeMode::parse(value).ok_or_else(|| format!("tema '{value}'"))?,
+            SETTING_UPDATE_CHECK => {
+                self.update_check = match value {
+                    "1" => true,
+                    "0" => false,
+                    _ => return Err(format!("booleano '{value}'")),
+                }
+            }
+            SETTING_UPDATE_LAST_CHECK => {
+                let when = DateTime::parse_from_rfc3339(value).map_err(|e| format!("data/hora '{value}': {e}"))?;
+                self.update_last_check = Some(when.with_timezone(&Utc));
+            }
+            SETTING_UPDATE_DISMISSED => self.update_dismissed = Some(value.to_string()),
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,5 +168,28 @@ mod tests {
     fn tag_name_drops_leading_hash() {
         assert_eq!(normalize_tag_name(" #dev "), Some("dev".to_string()));
         assert_eq!(normalize_tag_name("#"), None);
+    }
+
+    #[test]
+    fn settings_apply_known_keys() {
+        let mut s = Settings::default();
+        s.apply("theme", "dark").unwrap();
+        s.apply("update_check", "0").unwrap();
+        s.apply("update_last_check", "2026-10-06T10:00:00Z").unwrap();
+        s.apply("update_dismissed", "0.2.0").unwrap();
+        assert_eq!(s.theme, ThemeMode::Dark);
+        assert!(!s.update_check);
+        assert_eq!(s.update_last_check.unwrap().to_rfc3339(), "2026-10-06T10:00:00+00:00");
+        assert_eq!(s.update_dismissed.as_deref(), Some("0.2.0"));
+    }
+
+    #[test]
+    fn settings_reject_invalid_values_and_ignore_unknown_keys() {
+        let mut s = Settings::default();
+        assert!(s.apply("theme", "purple").is_err());
+        assert!(s.apply("update_check", "maybe").is_err());
+        assert!(s.apply("update_last_check", "ontem").is_err());
+        assert!(s.apply("some_future_key", "x").is_ok());
+        assert_eq!(s, Settings::default());
     }
 }
