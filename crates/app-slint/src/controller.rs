@@ -1,13 +1,16 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use chrono::{Days, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Days, NaiveDate, NaiveDateTime, Utc};
 use gus_anim_state::Timeline;
 pub use gus_combobox::Nav;
 use gus_combobox::{Combobox, Outcome};
-use ray_core::{matches_query, DomainError, Due, ProjectId, Store, Tag, TagId, Task, TaskId, View, WriteOp, PROJECT_COLORS};
+use ray_core::{matches_query, DomainError, Due, ProjectId, Store, Tag, TagId, Task, TaskId, ThemeMode, View, WriteOp, PROJECT_COLORS};
+use semver::Version;
 
+use crate::keys::KeyAction;
 use crate::present::{self, CalDay, Tone};
+use crate::update::{self, Release, UpdateError};
 
 const INBOX_COLOR: &str = "#8E8E93";
 /// Linhas da lista de sugestões do campo de tag.
@@ -77,6 +80,33 @@ pub enum QuickDate {
     Clear,
 }
 
+/// Página no lugar da lista de tarefas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    Tasks,
+    Settings,
+}
+
+impl Page {
+    pub fn as_int(self) -> i32 {
+        match self {
+            Page::Tasks => 0,
+            Page::Settings => 1,
+        }
+    }
+}
+
+/// Verificação de atualização.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckStatus {
+    Idle,
+    Checking,
+    UpToDate,
+    Available,
+    /// Só para verificação manual; a automática falha em silêncio.
+    Failed,
+}
+
 /// Em qual parte da lista uma tarefa cai; o início de cada parte ganha um cabeçalho.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
@@ -120,6 +150,13 @@ pub struct Controller {
     tag_task: Option<TaskId>,
     /// Tarefas apagadas nesta sessão: o desfazer que as restaura volta a selecioná-las.
     deleted: HashSet<TaskId>,
+    pub page: Page,
+    /// Overlay de atalhos (F1 / ?).
+    pub help_open: bool,
+    pub current_version: Version,
+    pub check: CheckStatus,
+    check_manual: bool,
+    release: Option<Release>,
 }
 
 impl Controller {
@@ -143,6 +180,12 @@ impl Controller {
             tag_combo: Combobox::default(),
             tag_task: None,
             deleted: HashSet::new(),
+            page: Page::Tasks,
+            help_open: false,
+            current_version: update::current_version(),
+            check: CheckStatus::Idle,
+            check_manual: false,
+            release: None,
         }
     }
 
@@ -460,6 +503,96 @@ impl Controller {
         self.filter_open = false;
         self.show_done = false;
         self.popover_task = None;
+        self.page = Page::Tasks;
+    }
+
+    pub fn open_settings(&mut self) {
+        self.page = Page::Settings;
+        self.popover_task = None;
+    }
+
+    pub fn toggle_help(&mut self) {
+        self.help_open = !self.help_open;
+    }
+
+    /// Atalho permitido agora? Com o overlay aberto, só Esc e F1/?; nas configurações, nada que
+    /// mexa na lista escondida (a tarefa selecionada continua lá, fora de vista).
+    pub fn key_allowed(&self, action: KeyAction) -> bool {
+        if self.help_open {
+            return matches!(action, KeyAction::Escape | KeyAction::ToggleHelp);
+        }
+        match self.page {
+            Page::Tasks => true,
+            Page::Settings => matches!(
+                action,
+                KeyAction::Escape | KeyAction::ToggleHelp | KeyAction::OpenSettings | KeyAction::SelectNav(_) | KeyAction::NewProject
+            ),
+        }
+    }
+
+    pub fn set_theme(&mut self, theme: ThemeMode) {
+        self.store.set_theme(theme);
+        self.flush();
+    }
+
+    pub fn set_update_check(&mut self, on: bool) {
+        self.store.set_update_check(on);
+        self.flush();
+    }
+
+    // ---------- atualização ----------
+
+    /// Começa uma verificação. Automática só se `should_check`; nunca duas ao mesmo tempo.
+    pub fn begin_check(&mut self, manual: bool, now: DateTime<Utc>) -> bool {
+        if self.check == CheckStatus::Checking || (!manual && !update::should_check(self.store.settings(), now)) {
+            return false;
+        }
+        self.check = CheckStatus::Checking;
+        self.check_manual = manual;
+        true
+    }
+
+    pub fn finish_check(&mut self, result: Result<Release, UpdateError>) {
+        if self.check != CheckStatus::Checking {
+            return; // resposta atrasada ou repetida
+        }
+        match result {
+            Ok(release) => {
+                self.store.mark_update_checked();
+                self.release = Some(release);
+                self.check = if self.update_notice().is_some() { CheckStatus::Available } else { CheckStatus::UpToDate };
+                self.flush();
+            }
+            Err(error) => {
+                tracing::warn!(%error, "verificar atualização");
+                self.check = if self.check_manual { CheckStatus::Failed } else { CheckStatus::Idle };
+            }
+        }
+    }
+
+    /// Versão nova a avisar (maior que a atual e que a dispensada).
+    pub fn update_notice(&self) -> Option<&Release> {
+        let dismissed = self.store.settings().update_dismissed.as_deref();
+        self.release.as_ref().filter(|r| update::is_newer(&self.current_version, &r.version, dismissed))
+    }
+
+    pub fn dismiss_update(&mut self) {
+        let Some(version) = self.update_notice().map(|r| r.version.to_string()) else { return };
+        self.store.dismiss_update(version);
+        if self.check == CheckStatus::Available {
+            self.check = CheckStatus::Idle;
+        }
+        self.flush();
+    }
+
+    pub fn check_status_text(&self) -> String {
+        match self.check {
+            CheckStatus::Idle => String::new(),
+            CheckStatus::Checking => "Verificando…".into(),
+            CheckStatus::UpToDate => "Você está na versão mais recente".into(),
+            CheckStatus::Available => self.update_notice().map(|r| format!("Versão {} disponível", r.version)).unwrap_or_default(),
+            CheckStatus::Failed => "Não foi possível verificar".into(),
+        }
     }
 
     pub fn toggle_expand(&mut self, id: TaskId) {
@@ -474,8 +607,17 @@ impl Controller {
         self.selected = gus_list::step(&keys, self.selected.as_ref(), delta as isize, |id| !self.is_leaving(*id)).copied();
     }
 
-    /// Esc fecha uma camada por vez: captura → popover → tarefa aberta → filtro → seleção.
+    /// Esc fecha uma camada por vez: overlay de atalhos → configurações → captura → popover →
+    /// tarefa aberta → filtro → seleção.
     pub fn escape(&mut self) {
+        if self.help_open {
+            self.help_open = false;
+            return;
+        }
+        if self.page == Page::Settings {
+            self.page = Page::Tasks;
+            return;
+        }
         if self.adding {
             self.adding = false;
         } else if self.popover_task.is_some() {

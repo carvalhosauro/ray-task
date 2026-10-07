@@ -1,18 +1,23 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use ray_core::writer::WriterEvent;
-use ray_core::{DomainError, TaskId, View};
+use ray_core::{DomainError, TaskId, ThemeMode, View};
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
-use crate::controller::{Controller, Nav, NavRow, QuickDate, Row};
+use crate::controller::{Controller, Nav, NavRow, Page, QuickDate, Row};
 use crate::keys::{self, KeyAction};
-use crate::{Actions, AppWindow, CalCell, NavItem, Picker, ProjectChoice, TagChip, TagKey, TaskItem};
+use crate::update::{self, UpdateError};
+use crate::{Actions, AppWindow, CalCell, HelpItem, NavItem, Picker, Prefs, ProjectChoice, TagChip, TagKey, TaskItem, Theme};
 
 pub const TOAST_UNDO: i32 = 0;
 pub const TOAST_RETRY: i32 = 1;
+
+/// Busca do último release (roda numa thread própria).
+pub type Fetch = Arc<dyn Fn() -> Result<String, UpdateError> + Send + Sync>;
 
 /// Ação aguardando resposta de um diálogo (Task 12).
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +62,7 @@ pub(crate) struct Shared {
     anim_clock: AnimClock,
     anim_timer: Timer,
     pub(crate) retry: Box<dyn Fn()>,
+    fetch: RefCell<Option<Fetch>>,
 }
 
 pub struct Binding {
@@ -67,6 +73,18 @@ pub struct Binding {
 impl Binding {
     pub fn controller(&self) -> Ref<'_, Controller> {
         self.shared.ctrl.borrow()
+    }
+
+    /// Liga a verificação automática: 5 s depois de abrir e a cada 6 h (o controller decide se
+    /// já passou um dia).
+    pub fn start_update_checks(&mut self, fetch: Fetch) {
+        *self.shared.fetch.borrow_mut() = Some(fetch);
+        let s = self.shared.clone();
+        Timer::single_shot(update::FIRST_CHECK_DELAY, move || run_check(&s, false));
+        let timer = Rc::new(Timer::default());
+        let s = self.shared.clone();
+        timer.start(TimerMode::Repeated, update::RECHECK_EVERY, move || run_check(&s, false));
+        self._timers.push(timer);
     }
 
     /// Define a hora de uma tarefa sem passar pela UI (usado em testes).
@@ -89,11 +107,19 @@ pub fn bind(ui: &AppWindow, ctrl: Controller, retry: Box<dyn Fn()>) -> Binding {
         anim_clock: AnimClock::new(),
         anim_timer: Timer::default(),
         retry,
+        fetch: RefCell::new(None),
     });
     wire_tasks(ui, &shared);
     wire_projects(ui, &shared);
     wire_details(ui, &shared);
     wire_keyboard(ui, &shared);
+    wire_settings(ui, &shared);
+    let prefs = ui.global::<Prefs>();
+    prefs.set_version(env!("CARGO_PKG_VERSION").into());
+    prefs.set_install_command(update::install_command().into());
+    let help: Vec<HelpItem> =
+        keys::help_items().into_iter().map(|(keys, text)| HelpItem { keys: keys.into(), text: text.into() }).collect();
+    prefs.set_help_rows(ModelRc::new(VecModel::from(help)));
     let timers = vec![start_clock(&shared)];
     refresh(&shared);
     Binding { shared, _timers: timers }
@@ -112,6 +138,22 @@ pub(crate) fn log_err<T>(result: Result<T, DomainError>, what: &str) -> Option<T
 pub(crate) fn update(s: &Shared, f: impl FnOnce(&mut Controller)) {
     f(&mut s.ctrl.borrow_mut());
     refresh(s);
+}
+
+fn theme_int(mode: ThemeMode) -> i32 {
+    match mode {
+        ThemeMode::System => 0,
+        ThemeMode::Light => 1,
+        ThemeMode::Dark => 2,
+    }
+}
+
+fn theme_from_int(n: i32) -> ThemeMode {
+    match n {
+        1 => ThemeMode::Light,
+        2 => ThemeMode::Dark,
+        _ => ThemeMode::System,
+    }
 }
 
 fn hex(s: &str) -> Color {
@@ -162,7 +204,25 @@ pub(crate) fn refresh(s: &Shared) {
     let c = s.ctrl.borrow();
     ui.global::<Actions>().set_tag_list_open(c.tag_list_open());
     ui.set_nav(ModelRc::new(VecModel::from(c.nav_rows().into_iter().map(nav_item).collect::<Vec<_>>())));
-    ui.set_selected_nav(c.selected_nav() as i32);
+    ui.set_selected_nav(if c.page == Page::Settings { -1 } else { c.selected_nav() as i32 });
+    ui.set_page(c.page.as_int());
+    ui.set_help_open(c.help_open);
+    let settings = c.store.settings();
+    ui.global::<Theme>().set_mode(theme_int(settings.theme));
+    let prefs = ui.global::<Prefs>();
+    prefs.set_theme_mode(theme_int(settings.theme));
+    prefs.set_update_check(settings.update_check);
+    prefs.set_update_status(c.check_status_text().into());
+    match c.update_notice() {
+        Some(release) => {
+            prefs.set_notice_version(release.version.to_string().into());
+            prefs.set_notice_notes(release.notes.clone().into());
+        }
+        None => {
+            prefs.set_notice_version("".into());
+            prefs.set_notice_notes("".into());
+        }
+    }
     ui.set_view_title(c.title().into());
     ui.set_view_subtitle(c.subtitle().into());
     // Linhas da mesma tarefa são reaproveitadas para as animações rodarem.
@@ -295,23 +355,102 @@ fn anim_fired(s: &Rc<Shared>, deadline: Duration) {
     arm_anim(s);
 }
 
-/// Crossfade: some (60 ms), troca o conteúdo, reaparece (60 ms). A seleção da sidebar desliza na hora.
-pub(crate) fn switch_view(s: &Rc<Shared>, view: View, nav_index: usize) {
+/// Crossfade: some (60 ms), troca o conteúdo, reaparece (60 ms).
+fn crossfade(s: &Rc<Shared>, change: impl FnOnce(&mut Controller) + 'static) {
     let Some(ui) = s.ui.upgrade() else { return };
-    if s.ctrl.borrow().view == view {
-        return;
-    }
-    ui.set_selected_nav(nav_index as i32);
     ui.set_content_faded(true);
     let s1 = s.clone();
     Timer::single_shot(Duration::from_millis(60), move || {
-        update(&s1, |c| c.select_view(view));
+        update(&s1, change);
         // Pedido de data pendente da visão anterior não pode abrir o popover mais tarde.
         close_picker(&s1);
         if let Some(ui) = s1.ui.upgrade() {
             ui.set_content_faded(false);
             ui.invoke_focus_root();
         }
+    });
+}
+
+/// Troca de visão com crossfade. A seleção da sidebar desliza na hora.
+pub(crate) fn switch_view(s: &Rc<Shared>, view: View, nav_index: usize) {
+    let Some(ui) = s.ui.upgrade() else { return };
+    {
+        let c = s.ctrl.borrow();
+        if c.view == view && c.page == Page::Tasks {
+            return;
+        }
+    }
+    ui.set_selected_nav(nav_index as i32);
+    crossfade(s, move |c| c.select_view(view));
+}
+
+fn wire_settings(ui: &AppWindow, s: &Rc<Shared>) {
+    let actions = ui.global::<Actions>();
+    {
+        let s = s.clone();
+        actions.on_open_settings(move || {
+            if s.ctrl.borrow().page != Page::Settings {
+                crossfade(&s, |c| c.open_settings());
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_set_theme(move |n| update(&s, |c| c.set_theme(theme_from_int(n))));
+    }
+    {
+        let s = s.clone();
+        actions.on_set_update_check(move |on| update(&s, |c| c.set_update_check(on)));
+    }
+    {
+        let s = s.clone();
+        actions.on_check_updates(move || run_check(&s, true));
+    }
+    {
+        let s = s.clone();
+        actions.on_update_response(move |ok, body| {
+            let result = if ok { update::parse_release(&body) } else { Err(UpdateError::Network(body.to_string())) };
+            update(&s, |c| c.finish_check(result));
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_open_release(move || {
+            let url = s.ctrl.borrow().update_notice().map(|r| r.url.clone());
+            if let Some(url) = url {
+                // URL já validada em update::parse_release (só a página de releases do projeto).
+                if let Err(error) = open::that_detached(&url) {
+                    tracing::warn!(%error, %url, "abrir release no navegador");
+                }
+            }
+        });
+    }
+    {
+        let s = s.clone();
+        actions.on_dismiss_update(move || update(&s, |c| c.dismiss_update()));
+    }
+}
+
+/// Começa uma verificação (se o controller deixar) e busca numa thread; a resposta volta pelo
+/// callback `update-response`, no event loop.
+fn run_check(s: &Rc<Shared>, manual: bool) {
+    let started = {
+        let mut c = s.ctrl.borrow_mut();
+        let now = c.store.now_utc();
+        c.begin_check(manual, now)
+    };
+    if !started {
+        return;
+    }
+    refresh(s);
+    let Some(fetch) = s.fetch.borrow().clone() else { return };
+    let weak = s.ui.clone();
+    std::thread::spawn(move || {
+        let (ok, body) = match fetch() {
+            Ok(body) => (true, body),
+            Err(error) => (false, error.to_string()),
+        };
+        let _ = weak.upgrade_in_event_loop(move |ui| ui.global::<Actions>().invoke_update_response(ok, body.into()));
     });
 }
 
@@ -747,21 +886,40 @@ fn wire_details(ui: &AppWindow, s: &Rc<Shared>) {
 fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     let actions = ui.global::<Actions>();
     {
-        let weak = ui.as_weak();
+        let s = s.clone();
         let keymap = keys::keymap();
         actions.on_key(move |text, ctrl, shift, alt, meta| {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = s.ui.upgrade() else { return false };
             let Some(&action) = gus_keys_slint::chord_from_slint(&text, ctrl, shift, alt, meta).and_then(|chord| keymap.lookup(&chord))
             else {
                 return false;
             };
-            run_key_action(&ui.global::<Actions>(), action);
+            // Atalho conhecido mas bloqueado (configurações/overlay abertos): consome sem agir.
+            let allowed = s.ctrl.borrow().key_allowed(action);
+            if allowed {
+                run_key_action(&ui.global::<Actions>(), action);
+            }
             true
         });
     }
     {
         let s = s.clone();
+        actions.on_toggle_help(move || {
+            update(&s, |c| c.toggle_help());
+            // Overlay aberto a partir de um campo de texto: o teclado sai do campo de trás.
+            if let Some(ui) = s.ui.upgrade() {
+                ui.invoke_focus_root();
+            }
+        });
+    }
+    {
+        let s = s.clone();
         actions.on_escape(move || {
+            // O overlay fica por cima de tudo, inclusive de um diálogo: fecha primeiro.
+            if s.ctrl.borrow().help_open {
+                update(&s, |c| c.escape());
+                return;
+            }
             if dialog_open(&s) {
                 close_dialogs(&s);
                 return;
@@ -845,6 +1003,17 @@ fn wire_keyboard(ui: &AppWindow, s: &Rc<Shared>) {
     {
         let s = s.clone();
         actions.on_toggle_filter(move || {
+            // "Buscar" nas configurações: volta para a lista já com o filtro aberto, em vez de
+            // abrir um campo invisível que filtraria a lista escondida.
+            if s.ctrl.borrow().page == Page::Settings {
+                crossfade(&s, |c| {
+                    c.page = Page::Tasks;
+                    if !c.filter_open {
+                        c.toggle_filter();
+                    }
+                });
+                return;
+            }
             update(&s, |c| c.toggle_filter());
             if let Some(ui) = s.ui.upgrade() {
                 if !ui.get_filter_visible() {
@@ -908,6 +1077,8 @@ fn run_key_action(actions: &Actions<'_>, action: KeyAction) {
         KeyAction::Undo => actions.invoke_undo(),
         KeyAction::SelectNav(index) => actions.invoke_select_nav(index as i32),
         KeyAction::ToggleFilter => actions.invoke_toggle_filter(),
+        KeyAction::OpenSettings => actions.invoke_open_settings(),
+        KeyAction::ToggleHelp => actions.invoke_toggle_help(),
     }
 }
 

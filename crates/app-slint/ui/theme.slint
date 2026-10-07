@@ -1,7 +1,9 @@
 import { Palette } from "std-widgets.slint";
 
 export global Theme {
-    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    // 0 = segue o sistema, 1 = claro, 2 = escuro (Configurações › Aparência)
+    in property <int> mode: 0;
+    out property <bool> dark: mode == 2 || (mode == 0 && Palette.color-scheme == ColorScheme.dark);
     out property <color> bg: dark ? #1C1C1E : #FFFFFF;
     out property <color> side: dark ? #242426 : #F5F5F7;
     out property <color> text: dark ? #F5F5F7 : #1D1D1F;

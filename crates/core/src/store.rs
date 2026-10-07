@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use chrono::{DateTime, Days, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Days, NaiveDate, NaiveDateTime, SecondsFormat, Utc};
 
 use crate::clock::Clock;
 use crate::error::DomainError;
@@ -27,10 +27,12 @@ pub struct Store {
     next_sort: i64,
     pub(crate) ops: Vec<WriteOp>,
     pub(crate) undo: Vec<UndoEntry>,
+    settings: Settings,
 }
 
 impl Store {
     pub fn new(snapshot: Snapshot, clock: Box<dyn Clock>) -> Self {
+        let settings = snapshot.settings;
         let mut projects = snapshot.projects;
         projects.sort_by_key(|p| (p.sort_order, p.id));
         let next_project = projects.iter().map(|p| p.id).max().unwrap_or(0) + 1;
@@ -48,6 +50,7 @@ impl Store {
             next_sort,
             ops: Vec::new(),
             undo: Vec::new(),
+            settings,
         }
     }
 
@@ -85,6 +88,45 @@ impl Store {
 
     pub fn task_count_in_project(&self, project_id: ProjectId) -> usize {
         self.tasks.values().filter(|t| t.project_id == Some(project_id)).count()
+    }
+
+    // ---------- preferências (sem desfazer) ----------
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn now_utc(&self) -> DateTime<Utc> {
+        self.clock.now_utc()
+    }
+
+    pub fn set_theme(&mut self, theme: ThemeMode) {
+        if self.settings.theme != theme {
+            self.settings.theme = theme;
+            self.push_setting(SETTING_THEME, theme.as_str().to_string());
+        }
+    }
+
+    pub fn set_update_check(&mut self, on: bool) {
+        if self.settings.update_check != on {
+            self.settings.update_check = on;
+            self.push_setting(SETTING_UPDATE_CHECK, if on { "1" } else { "0" }.to_string());
+        }
+    }
+
+    pub fn mark_update_checked(&mut self) {
+        let now = self.clock.now_utc();
+        self.settings.update_last_check = Some(now);
+        self.push_setting(SETTING_UPDATE_LAST_CHECK, now.to_rfc3339_opts(SecondsFormat::Secs, true));
+    }
+
+    pub fn dismiss_update(&mut self, version: String) {
+        self.settings.update_dismissed = Some(version.clone());
+        self.push_setting(SETTING_UPDATE_DISMISSED, version);
+    }
+
+    fn push_setting(&mut self, key: &'static str, value: String) {
+        self.ops.push(WriteOp::SetSetting { key, value });
     }
 
     pub fn take_ops(&mut self) -> Vec<WriteOp> {

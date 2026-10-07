@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ray_core::db::{self, DbError};
-use ray_core::{Due, Project, Tag, Task, WriteOp};
+use ray_core::{Due, FixedClock, Project, Settings, Snapshot, Store, Tag, Task, ThemeMode, WriteOp};
 
 fn ts(s: &str) -> DateTime<Utc> {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap().and_utc()
@@ -163,4 +163,64 @@ fn backup_writes_a_readable_copy() {
     let copy = rusqlite::Connection::open(&bak).unwrap();
     let n: i64 = copy.query_row("SELECT count(*) FROM projects", [], |r| r.get(0)).unwrap();
     assert_eq!(n, 1);
+}
+
+#[test]
+fn settings_roundtrip() {
+    let mut conn = db::open_in_memory().unwrap();
+    let mut store = Store::new(Snapshot::default(), Box::new(FixedClock::at("2026-10-06 10:00")));
+    store.set_theme(ThemeMode::Dark);
+    store.set_update_check(false);
+    store.mark_update_checked();
+    store.dismiss_update("0.2.0".into());
+    db::apply_all(&mut conn, &store.take_ops()).unwrap();
+    let snap = db::load(&conn).unwrap();
+    assert_eq!(
+        snap.settings,
+        Settings {
+            theme: ThemeMode::Dark,
+            update_check: false,
+            update_last_check: Some(ts("2026-10-06 10:00")),
+            update_dismissed: Some("0.2.0".into()),
+        }
+    );
+}
+
+#[test]
+fn setting_written_twice_keeps_the_last_value() {
+    let mut conn = db::open_in_memory().unwrap();
+    let mut store = Store::new(Snapshot::default(), Box::new(FixedClock::at("2026-10-06 10:00")));
+    store.set_theme(ThemeMode::Dark);
+    store.set_theme(ThemeMode::Light);
+    db::apply_all(&mut conn, &store.take_ops()).unwrap();
+    assert_eq!(db::load(&conn).unwrap().settings.theme, ThemeMode::Light);
+}
+
+#[test]
+fn invalid_setting_values_fall_back_to_defaults() {
+    let conn = db::open_in_memory().unwrap();
+    conn.execute_batch("INSERT INTO settings (key, value) VALUES ('theme', 'purple'), ('update_check', 'maybe'), ('future_key', 'x');")
+        .unwrap();
+    assert_eq!(db::load(&conn).unwrap().settings, Settings::default());
+}
+
+#[test]
+fn version_1_database_gains_settings_with_defaults() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ray-task.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(include_str!("../src/migrations/001_init.sql")).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, color, sort_order, created_at) VALUES (1, 'Casa', '#0A84FF', 0, '2026-10-01T09:00:00Z')",
+            [],
+        )
+        .unwrap();
+    }
+    let conn = db::open(&path).unwrap();
+    let snap = db::load(&conn).unwrap();
+    assert_eq!(snap.projects.len(), 1);
+    assert_eq!(snap.settings, Settings::default());
+    assert!(path.with_extension("db.bak").exists(), "backup antes de migrar");
 }

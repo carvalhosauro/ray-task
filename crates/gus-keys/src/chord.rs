@@ -20,6 +20,8 @@ pub enum Key {
     End,
     PageUp,
     PageDown,
+    /// Function keys `F1` to `F12`.
+    F(u8),
 }
 
 /// Modifier keys held with a key.
@@ -113,7 +115,11 @@ fn parse_key(name: &str) -> Result<Key, ChordError> {
     if name.is_empty() {
         return Err(ChordError::Empty);
     }
-    let key = match name.to_lowercase().as_str() {
+    let lower = name.to_lowercase();
+    if let Some(n) = lower.strip_prefix('f').filter(|d| !d.is_empty()).and_then(|d| d.parse::<u8>().ok()) {
+        return if (1..=12).contains(&n) { Ok(Key::F(n)) } else { Err(ChordError::UnknownKey(name.to_string())) };
+    }
+    let key = match lower.as_str() {
         "up" => Key::Up,
         "down" => Key::Down,
         "left" => Key::Left,
@@ -148,6 +154,7 @@ impl fmt::Display for Chord {
         }
         let name = match self.key {
             Key::Char(c) => return write!(f, "{}", c.to_uppercase()),
+            Key::F(n) => return write!(f, "F{n}"),
             Key::Up => "Up",
             Key::Down => "Down",
             Key::Left => "Left",
@@ -254,6 +261,23 @@ mod tests {
     fn display_round_trips() {
         for s in ["Ctrl+N", "Ctrl+Shift+N", "Up", "Esc", "Ctrl+Enter", "Delete", "Alt+PageDown", "Meta+Tab", "Ctrl+9"] {
             assert_eq!(parse(&parse(s).to_string()), parse(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn function_keys_parse_and_print() {
+        assert_eq!(parse("F1"), Chord::new(Key::F(1), Mods::default()));
+        assert_eq!(parse("ctrl+f12"), Chord::new(Key::F(12), ctrl()));
+        assert_eq!(parse("F1").to_string(), "F1");
+        assert_eq!(parse("Ctrl+F12").to_string(), "Ctrl+F12");
+        // "F" sozinho continua sendo a letra
+        assert_eq!(parse("Ctrl+F"), Chord::new(Key::Char('f'), ctrl()));
+    }
+
+    #[test]
+    fn function_keys_out_of_range_are_unknown() {
+        for s in ["F0", "F13", "F99"] {
+            assert_eq!(s.parse::<Chord>(), Err(ChordError::UnknownKey(s.to_string())), "{s}");
         }
     }
 }

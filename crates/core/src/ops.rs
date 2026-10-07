@@ -9,4 +9,9 @@ pub enum WriteOp {
     DeleteTag(TagId),
     UpsertTask(Task),
     DeleteTask(TaskId),
+    /// Preferência (tabela `settings`); a chave é uma das `SETTING_*` de `model`.
+    SetSetting {
+        key: &'static str,
+        value: String,
+    },
 }

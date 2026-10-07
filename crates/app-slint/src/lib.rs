@@ -8,3 +8,4 @@ pub mod logging;
 pub mod paths;
 pub mod present;
 pub mod shortcut;
+pub mod update;
