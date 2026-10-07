@@ -4,13 +4,13 @@ use gus_keys::{Chord, Key, Mods};
 use slint::platform::Key as SlintKey;
 
 /// The chord for a Slint key event, or `None` for keys `gus-keys` does not model (modifiers
-/// pressed alone, function keys, other special keys) and for empty or multi-character text.
+/// pressed alone, special keys other than F1–F12) and for empty or multi-character text.
 ///
 /// Call it from a `FocusScope`'s `key-pressed` with `event.text` and `event.modifiers.*`.
 pub fn chord_from_slint(text: &str, ctrl: bool, shift: bool, alt: bool, meta: bool) -> Option<Chord> {
     let mut chars = text.chars();
     let (Some(c), None) = (chars.next(), chars.next()) else { return None };
-    let key = named(c).or_else(|| is_printable(c).then_some(Key::Char(c)))?;
+    let key = named(c).or_else(|| function(c)).or_else(|| is_printable(c).then_some(Key::Char(c)))?;
     // Num caractere sem maiúscula/minúscula (dígito, símbolo) o Shift já está no texto: em
     // layouts como o AZERTY, `1` só sai com Shift e deve casar com `Ctrl+1`.
     let shift = shift && !matches!(key, Key::Char(c) if is_caseless(c));
@@ -40,6 +40,26 @@ fn named(c: char) -> Option<Key> {
     .into_iter()
     .find(|(slint_key, _)| char::from(*slint_key) == c)
     .map(|(_, key)| key)
+}
+
+fn function(c: char) -> Option<Key> {
+    [
+        SlintKey::F1,
+        SlintKey::F2,
+        SlintKey::F3,
+        SlintKey::F4,
+        SlintKey::F5,
+        SlintKey::F6,
+        SlintKey::F7,
+        SlintKey::F8,
+        SlintKey::F9,
+        SlintKey::F10,
+        SlintKey::F11,
+        SlintKey::F12,
+    ]
+    .into_iter()
+    .position(|k| char::from(k) == c)
+    .map(|i| Key::F(i as u8 + 1))
 }
 
 /// Slint encodes the other special keys as control characters or in the private-use area.
@@ -106,10 +126,16 @@ mod tests {
     }
 
     #[test]
-    fn modifier_only_and_function_keys_are_none() {
-        for key in [SlintKey::Control, SlintKey::Shift, SlintKey::Alt, SlintKey::Meta, SlintKey::F1, SlintKey::Insert] {
+    fn modifier_only_and_other_special_keys_are_none() {
+        for key in [SlintKey::Control, SlintKey::Shift, SlintKey::Alt, SlintKey::Meta, SlintKey::Insert] {
             assert_eq!(chord_from_slint(&text(key), true, false, false, false), None, "{key:?}");
         }
+    }
+
+    #[test]
+    fn function_keys_map_to_f() {
+        assert_eq!(chord_from_slint(&text(SlintKey::F1), false, false, false, false), plain(Key::F(1)));
+        assert_eq!(chord_from_slint(&text(SlintKey::F12), false, false, false, false), plain(Key::F(12)));
     }
 
     #[test]

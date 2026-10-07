@@ -8,8 +8,11 @@ import { Actions, Picker } from "globals.slint";
 import { Icon, IconButton, Dialog, DialogButton, MenuPanel } from "components.slint";
 import { Sidebar } from "sidebar.slint";
 import { TaskRow } from "task_row.slint";
-export { Actions, Picker } from "globals.slint";
-export { TagChip, NavItem, TaskItem, CalCell, ProjectChoice } from "types.slint";
+import { SettingsPage } from "settings.slint";
+import { HelpOverlay } from "help.slint";
+export { Actions, Picker, Prefs } from "globals.slint";
+export { Theme } from "theme.slint";
+export { TagChip, NavItem, TaskItem, CalCell, ProjectChoice, HelpItem } from "types.slint";
 
 component NewTaskRow inherits Rectangle {
     height: 44px;
@@ -239,6 +242,9 @@ export component AppWindow inherits Window {
     in property <string> confirm-title;
     in property <string> confirm-message;
     in property <string> confirm-button;
+    // 0 = lista de tarefas, 1 = configurações
+    in property <int> page;
+    in property <bool> help-open;
 
     public function focus-root() { keys.focus(); }
 
@@ -266,86 +272,90 @@ export component AppWindow inherits Window {
                 Rectangle {
                     opacity: root.content-faded ? 0 : 1;
                     animate opacity { duration: 60ms; easing: ease-out; }
-                    VerticalLayout {
-                        HorizontalLayout {
-                            padding-left: 32px;
-                            padding-right: 24px;
-                            padding-top: 28px;
-                            padding-bottom: 10px;
-                            spacing: 12px;
-                            VerticalLayout {
-                                spacing: 4px;
-                                Text { text: root.view-title; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: Theme.text; }
-                                Text { text: root.view-subtitle; font-size: 13px; color: Theme.sub; }
-                            }
-                            Rectangle { horizontal-stretch: 1; }
-                            if root.filter-visible : VerticalLayout {
-                                alignment: center;
-                                FilterField { }
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                IconButton {
-                                    icon: @image-url("icons/plus.svg");
-                                    tint: Theme.accent;
-                                    label: "Nova tarefa";
-                                    clicked => { Actions.new-task(); }
+                    Rectangle {
+                        visible: root.page == 0;
+                        VerticalLayout {
+                            HorizontalLayout {
+                                padding-left: 32px;
+                                padding-right: 24px;
+                                padding-top: 28px;
+                                padding-bottom: 10px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { text: root.view-title; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: Theme.text; }
+                                    Text { text: root.view-subtitle; font-size: 13px; color: Theme.sub; }
                                 }
-                            }
-                        }
-                        // Lista vazia: o rodapé fica fora da lista virtual (não há última linha para carregá-lo).
-                        if root.tasks.length == 0 : ListFooter {
-                            vertical-stretch: 0;
-                            padding-left: 20px;
-                            padding-right: 20px;
-                            adding: root.adding;
-                            done-toggle-label: root.done-toggle-label;
-                            empty-text: root.empty-text;
-                        }
-                        task-list := ListView {
-                            vertical-stretch: 1;
-                            // Faixa visível: a lista de sugestões de tag some se o campo rolar para fora.
-                            property <length> clip-top: self.absolute-position.y;
-                            property <length> clip-bottom: self.absolute-position.y + self.visible-height;
-                            init => {
-                                Actions.tag-clip-top = self.clip-top;
-                                Actions.tag-clip-bottom = self.clip-bottom;
-                            }
-                            changed clip-top => { Actions.tag-clip-top = self.clip-top; }
-                            changed clip-bottom => { Actions.tag-clip-bottom = self.clip-bottom; }
-                            // Nova tarefa entra no fim: rola até lá para o campo existir e receber o foco.
-                            property <bool> adding: root.adding;
-                            changed adding => {
-                                if (self.adding && self.content-height > self.visible-height) {
-                                    self.content-y = -self.content-height;
+                                Rectangle { horizontal-stretch: 1; }
+                                if root.filter-visible : VerticalLayout {
+                                    alignment: center;
+                                    FilterField { }
                                 }
-                            }
-                            property <int> reveal-request: root.reveal-request;
-                            changed reveal-request => { self.reveal(root.reveal-index, root.tasks.length); }
-                            // Só as linhas visíveis existem; o rodapé vai junto da última linha.
-                            for item[i] in root.tasks : VerticalLayout {
-                                padding-left: 20px;
-                                padding-right: 20px;
-                                // Linha alvo do teclado: garante que está inteira na tela (y real).
-                                property <int> fine: task-list.fine-request;
-                                changed fine => {
-                                    if (i == root.reveal-index) {
-                                        task-list.fit(self.y + task-list.content-y, self.height);
+                                VerticalLayout {
+                                    alignment: center;
+                                    IconButton {
+                                        icon: @image-url("icons/plus.svg");
+                                        tint: Theme.accent;
+                                        label: "Nova tarefa";
+                                        clicked => { Actions.new-task(); }
                                     }
                                 }
-                                TaskRow {
-                                    item: item;
-                                    expanded: item.id == root.expanded-id;
-                                    selected: item.id == root.selected-id;
+                            }
+                            // Lista vazia: o rodapé fica fora da lista virtual (não há última linha para carregá-lo).
+                            if root.tasks.length == 0 : ListFooter {
+                                vertical-stretch: 0;
+                                padding-left: 20px;
+                                padding-right: 20px;
+                                adding: root.adding;
+                                done-toggle-label: root.done-toggle-label;
+                                empty-text: root.empty-text;
+                            }
+                            task-list := ListView {
+                                vertical-stretch: 1;
+                                // Faixa visível: a lista de sugestões de tag some se o campo rolar para fora.
+                                property <length> clip-top: self.absolute-position.y;
+                                property <length> clip-bottom: self.absolute-position.y + self.visible-height;
+                                init => {
+                                    Actions.tag-clip-top = self.clip-top;
+                                    Actions.tag-clip-bottom = self.clip-bottom;
                                 }
-                                if i == root.tasks.length - 1 : ListFooter {
-                                    adding: root.adding;
-                                    done-toggle-label: root.done-toggle-label;
-                                    empty-text: root.empty-text;
+                                changed clip-top => { Actions.tag-clip-top = self.clip-top; }
+                                changed clip-bottom => { Actions.tag-clip-bottom = self.clip-bottom; }
+                                // Nova tarefa entra no fim: rola até lá para o campo existir e receber o foco.
+                                property <bool> adding: root.adding;
+                                changed adding => {
+                                    if (self.adding && self.content-height > self.visible-height) {
+                                        self.content-y = -self.content-height;
+                                    }
+                                }
+                                property <int> reveal-request: root.reveal-request;
+                                changed reveal-request => { self.reveal(root.reveal-index, root.tasks.length); }
+                                // Só as linhas visíveis existem; o rodapé vai junto da última linha.
+                                for item[i] in root.tasks : VerticalLayout {
+                                    padding-left: 20px;
+                                    padding-right: 20px;
+                                    // Linha alvo do teclado: garante que está inteira na tela (y real).
+                                    property <int> fine: task-list.fine-request;
+                                    changed fine => {
+                                        if (i == root.reveal-index) {
+                                            task-list.fit(self.y + task-list.content-y, self.height);
+                                        }
+                                    }
+                                    TaskRow {
+                                        item: item;
+                                        expanded: item.id == root.expanded-id;
+                                        selected: item.id == root.selected-id;
+                                    }
+                                    if i == root.tasks.length - 1 : ListFooter {
+                                        adding: root.adding;
+                                        done-toggle-label: root.done-toggle-label;
+                                        empty-text: root.empty-text;
+                                    }
                                 }
                             }
                         }
                     }
+                    if root.page == 1 : SettingsPage { }
                 }
 
                 // Toast: "Tarefa concluída · Desfazer" / "Falha ao salvar · Tentar de novo"
@@ -425,6 +435,8 @@ export component AppWindow inherits Window {
                 DialogButton { text: root.confirm-button; danger: true; clicked => { Actions.confirm-accept(); } }
             }
         }
+
+        if root.help-open : HelpOverlay { }
     }
 
     // Sugestões do campo de tag, por cima de tudo (fora do FocusScope: o foco fica no campo).

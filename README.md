@@ -74,6 +74,8 @@ Every number is a test you can run: [`crates/core/tests/perf.rs`](crates/core/te
 | `Ctrl+1` / `2` / `3` | Today / Upcoming / Inbox |
 | `Ctrl+4` … `Ctrl+9` | Projects, in sidebar order |
 | `Ctrl+F` | Filter the current view |
+| `Ctrl+,` | Settings |
+| `F1` / `?` | Shortcut list |
 
 Right-click a project to rename, recolor or delete it. Click an open tag to remove, rename or delete it.
 
@@ -133,6 +135,12 @@ Binaries are not code-signed yet.
 | Windows | `%APPDATA%\ray-task\ray-task.db` | same folder |
 
 Before a schema migration, ray-task copies the database to `ray-task.db.bak`. Back up that one file and you have backed up everything.
+
+## Privacy
+
+ray-task never sends your tasks anywhere. Once a day it asks GitHub's public API for the latest
+release version (`api.github.com/repos/carvalhosauro/ray-task/releases/latest`); nothing else is
+sent. Turn it off in **Configurações › Atualizações › Verificar automaticamente**.
 
 ## Build from source
 
