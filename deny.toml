@@ -27,6 +27,9 @@ allow = [
   "CC0-1.0",
   "BSL-1.0",
   "Unlicense", # ksni (via Slint), public-domain dedication
+  # webpki-roots (via ureq, update check): Mozilla's CA root list as data.
+  # Permissive data license, no copyleft, no effect on the MIT binary.
+  "CDLA-Permissive-2.0",
   # Slint is tri-licensed (GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR
   # LicenseRef-Slint-Software-3.0). ray-task uses the royalty-free license for
   # desktop apps, which requires the "Made with Slint" attribution in README.md.
