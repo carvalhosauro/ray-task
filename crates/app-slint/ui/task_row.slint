@@ -375,6 +375,29 @@ component TaskDetails inherits Rectangle {
     }
 }
 
+/// Lixeira da linha: só aparece com a linha em hover, selecionada ou aberta.
+/// Escondida, fica desabilitada para um clique às cegas não apagar nada.
+component TrashButton inherits Rectangle {
+    in property <bool> shown;
+    callback clicked;
+    width: 28px;
+    height: 32px;
+    accessible-role: button;
+    accessible-label: "Apagar tarefa";
+    accessible-action-default => { root.clicked(); }
+    opacity: root.shown ? 1 : 0;
+    animate opacity { duration: 120ms; easing: ease-out; }
+    touch := TouchArea {
+        enabled: root.shown;
+        clicked => { root.clicked(); }
+    }
+    Icon {
+        size: 16px;
+        source: @image-url("icons/trash.svg");
+        colorize: touch.has-hover ? Theme.red : Theme.faint;
+    }
+}
+
 export component TaskRow inherits Rectangle {
     in property <TaskItem> item;
     in property <bool> expanded;
@@ -421,88 +444,95 @@ export component TaskRow inherits Rectangle {
                 animate background { duration: 400ms; easing: ease-out; }
             }
 
-            VerticalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                padding-top: root.expanded ? 12px : 6px;
-                padding-bottom: root.expanded ? 12px : 6px;
-                HorizontalLayout {
-                    spacing: 6px;
-                    VerticalLayout {
-                        alignment: start;
-                        CheckCircle {
-                            done: root.item.done;
-                            label: root.item.title;
-                            clicked => { Actions.toggle(root.item.id); }
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 0px;
-                        HorizontalLayout {
-                            spacing: 8px;
-                            min-height: 32px;
-                            if !root.expanded : Text {
-                                text: root.item.title;
-                                font-size: 15px;
-                                color: root.item.done ? Theme.sub : Theme.text;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                max-width: self.preferred-width;
-                                horizontal-stretch: 1;
-                                TouchArea { clicked => { Actions.expand(root.item.id); } }
+            // Só detecta o hover da linha (para a lixeira); os filhos seguem recebendo os cliques.
+            row-hover := TouchArea {
+                VerticalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: root.expanded ? 12px : 6px;
+                    padding-bottom: root.expanded ? 12px : 6px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        VerticalLayout {
+                            alignment: start;
+                            CheckCircle {
+                                done: root.item.done;
+                                label: root.item.title;
+                                clicked => { Actions.toggle(root.item.id); }
                             }
-                            if root.expanded : TextInput {
-                                // Aberta pelo teclado (Enter): o título recebe o foco. A linha pode
-                                // nascer depois do pedido (lista virtual), por isso init + changed.
-                                property <int> focus-req: Actions.focus-title-request;
-                                function take-focus() {
-                                    if (Actions.focus-title-task == root.item.id && Actions.focus-title-handled != Actions.focus-title-request) {
-                                        Actions.focus-title-handled = Actions.focus-title-request;
-                                        self.focus();
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 0px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                min-height: 32px;
+                                if !root.expanded : Text {
+                                    text: root.item.title;
+                                    font-size: 15px;
+                                    color: root.item.done ? Theme.sub : Theme.text;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    max-width: self.preferred-width;
+                                    horizontal-stretch: 1;
+                                    TouchArea { clicked => { Actions.expand(root.item.id); } }
+                                }
+                                if root.expanded : TextInput {
+                                    // Aberta pelo teclado (Enter): o título recebe o foco. A linha pode
+                                    // nascer depois do pedido (lista virtual), por isso init + changed.
+                                    property <int> focus-req: Actions.focus-title-request;
+                                    function take-focus() {
+                                        if (Actions.focus-title-task == root.item.id && Actions.focus-title-handled != Actions.focus-title-request) {
+                                            Actions.focus-title-handled = Actions.focus-title-request;
+                                            self.focus();
+                                        }
+                                    }
+                                    init => { self.take-focus(); }
+                                    changed focus-req => { self.take-focus(); }
+                                    text: root.item.title;
+                                    font-size: 15px;
+                                    font-weight: 600;
+                                    color: Theme.text;
+                                    vertical-alignment: center;
+                                    single-line: true;
+                                    horizontal-stretch: 1;
+                                    accessible-label: "Título";
+                                    edited => { Actions.edit(root.item.id, self.text, root.item.notes); }
+                                    accepted => { Actions.escape(); }
+                                }
+                                if !root.expanded : HorizontalLayout {
+                                    spacing: 6px;
+                                    for tag in root.item.tags : VerticalLayout {
+                                        alignment: center;
+                                        Chip { text: "#" + tag.name; }
                                     }
                                 }
-                                init => { self.take-focus(); }
-                                changed focus-req => { self.take-focus(); }
-                                text: root.item.title;
-                                font-size: 15px;
-                                font-weight: 600;
-                                color: Theme.text;
-                                vertical-alignment: center;
-                                single-line: true;
-                                horizontal-stretch: 1;
-                                accessible-label: "Título";
-                                edited => { Actions.edit(root.item.id, self.text, root.item.notes); }
-                                accepted => { Actions.escape(); }
-                            }
-                            if !root.expanded : HorizontalLayout {
-                                spacing: 6px;
-                                for tag in root.item.tags : VerticalLayout {
-                                    alignment: center;
-                                    Chip { text: "#" + tag.name; }
+                                Rectangle { horizontal-stretch: 1; }
+                                if !root.expanded && root.item.meta != "" : Text {
+                                    text: root.item.meta;
+                                    font-size: 13px;
+                                    color: root.item.tone == 2 ? Theme.red : root.item.tone == 1 ? Theme.orange : Theme.sub;
+                                    vertical-alignment: center;
+                                }
+                                TrashButton {
+                                    shown: !root.item.leaving && (row-hover.has-hover || root.selected || root.expanded);
+                                    clicked => { Actions.delete(root.item.id); }
                                 }
                             }
-                            Rectangle { horizontal-stretch: 1; }
-                            if !root.expanded && root.item.meta != "" : Text {
-                                text: root.item.meta;
-                                font-size: 13px;
-                                color: root.item.tone == 2 ? Theme.red : root.item.tone == 1 ? Theme.orange : Theme.sub;
-                                vertical-alignment: center;
+                            if root.item.show-project && !root.expanded : HorizontalLayout {
+                                spacing: 6px;
+                                padding-bottom: 4px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: root.item.project-color; }
+                                }
+                                Text { text: root.item.project-name; font-size: 12.5px; color: Theme.sub; }
+                                Rectangle { horizontal-stretch: 1; }
                             }
-                        }
-                        if root.item.show-project && !root.expanded : HorizontalLayout {
-                            spacing: 6px;
-                            padding-bottom: 4px;
-                            VerticalLayout {
-                                alignment: center;
-                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: root.item.project-color; }
-                            }
-                            Text { text: root.item.project-name; font-size: 12.5px; color: Theme.sub; }
-                            Rectangle { horizontal-stretch: 1; }
                         }
                     }
+                    if root.expanded : TaskDetails { item: root.item; }
                 }
-                if root.expanded : TaskDetails { item: root.item; }
             }
         }
     }
