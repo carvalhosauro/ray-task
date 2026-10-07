@@ -1635,19 +1635,19 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "gus-anim-state"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "gus-combobox"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "gus-keys"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "gus-keys-slint"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "gus-keys",
  "slint",
@@ -1655,11 +1655,11 @@ dependencies = [
 
 [[package]]
 name = "gus-list"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "gus-list-slint"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "gus-list",
  "slint",
@@ -3734,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "ray-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "rusqlite",
@@ -3745,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "ray-task"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "dirs",
