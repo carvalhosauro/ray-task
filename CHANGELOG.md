@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/carvalhosauro/ray-task/compare/v0.1.1...v0.1.2) - 2026-10-07
+
+### Added
+
+- *(app)* add a trash button and hover hint to task rows ([#9](https://github.com/carvalhosauro/ray-task/pull/9))
+- *(app)* add a tag suggestion list built on gus-combobox ([#8](https://github.com/carvalhosauro/ray-task/pull/8))
+- *(core)* add background writer with retry and bounded shutdown
+- *(core)* add undo for delete, complete and move
+- *(core)* add views, counters, due status and text filter
+- *(core)* add in-memory store with domain rules
+- *(core)* add SQLite schema, migrations, load and apply
+- *(core)* add domain model, errors and clock
+
+### Fixed
+
+- land settings, help and update notice on main and repair Cargo.lock ([#12](https://github.com/carvalhosauro/ray-task/pull/12))
+- *(core)* log writer send failures and unflushed queue on exit
+
+### Other
+
+- prepare ray-task for open source ([#1](https://github.com/carvalhosauro/ray-task/pull/1))
+- add MIT license
+- add README and manual release checklist
+- fix clippy warnings
+- *(core)* add performance budget test for 5000 tasks
+
 ## [0.1.1](https://github.com/carvalhosauro/ray-task/compare/v0.1.0...v0.1.1) - 2026-10-06
 
 ### Added
