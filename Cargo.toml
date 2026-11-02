@@ -11,7 +11,7 @@ repository = "https://github.com/carvalhosauro/ray-task"
 
 [workspace.dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 thiserror = "2"
 tracing = "0.1.44"
 tempfile = "3.27"
