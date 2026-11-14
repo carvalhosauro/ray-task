@@ -1635,27 +1635,19 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "gus-anim-state"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7bb4d1177d920a1a46b1a1a8106a6f53a6599d14177bd38446da4b5bfd19965"
+version = "0.1.2"
 
 [[package]]
 name = "gus-combobox"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53f4ecd67a880c81986a514c46d28b10afb1d23ebef89dbdc551e8dc5ecc1c3e"
+version = "0.1.2"
 
 [[package]]
 name = "gus-keys"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f787b2949dce31927539dc0d68f8e9e2f8ae45a0180508b7746d488b0a8ec89d"
+version = "0.1.2"
 
 [[package]]
 name = "gus-keys-slint"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a720644222b0ed6c6da5bfc9e71005e246f844cbf394f81c7f4008170141883"
+version = "0.1.2"
 dependencies = [
  "gus-keys",
  "slint",
@@ -1663,15 +1655,11 @@ dependencies = [
 
 [[package]]
 name = "gus-list"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c1ef65a759ef4b532b7d7a1fe765e238a22fd12396cf26c2084d46f48dc9790"
+version = "0.1.2"
 
 [[package]]
 name = "gus-list-slint"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a159a0b740baf932f51fa8222bdecc30dba84813daf653fc58f328ee84c110c"
+version = "0.1.2"
 dependencies = [
  "gus-list",
  "slint",
@@ -3746,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "ray-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "rusqlite",
@@ -3757,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "ray-task"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "dirs",
