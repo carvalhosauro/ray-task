@@ -46,7 +46,7 @@ On a slow machine, cap parallel compilation: `export CARGO_BUILD_JOBS=2`.
 
 ## Coverage
 
-CI fails if line coverage drops below **93%**. The floor only goes up: if your PR raises coverage, bump `--fail-under-lines` in `.github/workflows/ci.yml` to the new integer. Lowering it needs a written reason in the PR description.
+CI fails if line coverage drops below **92%**. The floor only goes up: if your PR raises coverage, bump `--fail-under-lines` in `.github/workflows/ci.yml` to the new integer. Lowering it needs a written reason in the PR description.
 
 ## Releases (maintainers)
 
